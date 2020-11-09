@@ -9,7 +9,7 @@ registerDoParallel(cl)
 foreach::getDoParWorkers()
 clusterEvalQ(cl, {library(tidymodels)})
 
-
+set.seed(3000)
 d <- read_csv("data/train.csv") %>% 
   dplyr::sample_frac(.005)
 
