@@ -1,0 +1,307 @@
+
+R version 3.6.0 (2019-04-26) -- "Planting of a Tree"
+Copyright (C) 2019 The R Foundation for Statistical Computing
+Platform: x86_64-redhat-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> library(tidyverse)
+── Attaching packages ─────────────────────────────────────── tidyverse 1.3.0 ──
+✔ ggplot2 3.3.2     ✔ purrr   0.3.4
+✔ tibble  3.0.4     ✔ dplyr   1.0.2
+✔ tidyr   1.1.2     ✔ stringr 1.4.0
+✔ readr   1.4.0     ✔ forcats 0.5.0
+── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+✖ dplyr::filter() masks stats::filter()
+✖ dplyr::lag()    masks stats::lag()
+> library(tidymodels)
+── Attaching packages ────────────────────────────────────── tidymodels 0.1.1 ──
+✔ broom     0.7.1      ✔ recipes   0.1.14
+✔ dials     0.0.9      ✔ rsample   0.0.8 
+✔ infer     0.5.3      ✔ tune      0.1.1 
+✔ modeldata 0.1.0      ✔ workflows 0.2.1 
+✔ parsnip   0.1.4      ✔ yardstick 0.0.7 
+── Conflicts ───────────────────────────────────────── tidymodels_conflicts() ──
+✖ scales::discard() masks purrr::discard()
+✖ dplyr::filter()   masks stats::filter()
+✖ recipes::fixed()  masks stringr::fixed()
+✖ dplyr::lag()      masks stats::lag()
+✖ yardstick::spec() masks readr::spec()
+✖ recipes::step()   masks stats::step()
+> library(doParallel)
+Loading required package: foreach
+
+Attaching package: ‘foreach’
+
+The following objects are masked from ‘package:purrr’:
+
+    accumulate, when
+
+Loading required package: iterators
+Loading required package: parallel
+> 
+> all_cores <- parallel::detectCores(logical = FALSE)
+> 
+> cl <- makePSOCKcluster(all_cores)
+> registerDoParallel(cl)
+> foreach::getDoParWorkers()
+[1] 28
+> clusterEvalQ(cl, {library(tidymodels)})
+[[1]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[2]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[3]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[4]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[5]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[6]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[7]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[8]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[9]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[10]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[11]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[12]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[13]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[14]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[15]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[16]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[17]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[18]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[19]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[20]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[21]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[22]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[23]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[24]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[25]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[26]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[27]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+[[28]]
+ [1] "yardstick"  "workflows"  "tune"       "tidyr"      "tibble"    
+ [6] "rsample"    "recipes"    "purrr"      "parsnip"    "modeldata" 
+[11] "infer"      "ggplot2"    "dplyr"      "dials"      "scales"    
+[16] "broom"      "tidymodels" "stats"      "graphics"   "grDevices" 
+[21] "utils"      "datasets"   "methods"    "base"      
+
+> 
+> set.seed(3000)
+> d <- read_csv("data/train.csv") #%>% 
+
+── Column specification ────────────────────────────────────────────────────────
+cols(
+  .default = col_character(),
+  id = col_double(),
+  attnd_dist_inst_id = col_double(),
+  attnd_schl_inst_id = col_double(),
+  enrl_grd = col_double(),
+  calc_admn_cd = col_logical(),
+  partic_dist_inst_id = col_double(),
+  partic_schl_inst_id = col_double(),
+  score = col_double(),
+  classification = col_double(),
+  ncessch = col_double(),
+  lat = col_double(),
+  lon = col_double()
+)
+ℹ Use `spec()` for the full column specifications.
+
+>   #dplyr::sample_frac(.005)
+> 
+> split <- initial_split(d)
+> train <- training(split)
+> train_cv <- vfold_cv(train)
+> 
+> # basic recipe
+> rec <- recipe(classification ~ stay_in_schl + tag_ed_fg + enrl_grd + ind_ed_fg, data = train)  %>% 
++   step_mutate(enrl_grd = as.factor(enrl_grd)) %>% 
++   step_unknown(all_nominal(), -all_outcomes())  %>% 
++   step_novel(all_nominal(), -all_outcomes()) %>%
++   step_nzv(all_predictors(), freq_cut = 0, unique_cut = 0) %>% 
++   step_dummy(all_predictors(), -all_numeric(), -all_outcomes())  %>% 
++   step_nzv(all_predictors()) 
+> 
+> # linear regression model
+> lm <- nearest_neighbor()  %>% 
++   set_mode("classification")  %>% 
++   set_engine("kknn")
+> 
+> fit1 <- fit_resamples(lm, rec, train_cv)
+Warning message:
+All models failed in [fit_resamples()]. See the `.notes` column. 
+> saveRDS(fit1, "fit1.Rds")
+> 
+> proc.time()
+   user  system elapsed 
+175.777  14.031 398.284 
