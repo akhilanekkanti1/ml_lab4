@@ -28,9 +28,9 @@ rec <- recipe(classification ~ stay_in_schl + tag_ed_fg + enrl_grd + ind_ed_fg, 
   step_nzv(all_predictors()) 
 
 # linear regression model
-lm <- linear_reg()  %>% 
-  set_mode("regression")  %>% 
-  set_engine("lm")
+lm <- nearest_neighbor()  %>% 
+  set_mode("classification")  %>% 
+  set_engine("kknn")
 
-fit1 <- fit_resamples(mod, rec, train_cv)
+fit1 <- fit_resamples(lm, rec, train_cv)
 saveRDS(fit1, "fit1.Rds")
