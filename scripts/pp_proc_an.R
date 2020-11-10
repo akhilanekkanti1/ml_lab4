@@ -35,7 +35,7 @@ rec <- recipe(classification ~ econ_dsvntg + tag_ed_fg + enrl_grd + gndr + ethni
 
 prep(rec)
 
-# linear regression model
+#knn model
 lm <- nearest_neighbor(neighbors = 11)  %>%
   set_engine("kknn") %>% 
   set_mode("classification")  

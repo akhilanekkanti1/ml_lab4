@@ -9,7 +9,7 @@ foreach::getDoParWorkers()
 clusterEvalQ(cl, {library(tidymodels)})
 
 
-d <- read_csv("train.csv") 
+d <- read_csv(here::here("data","train.csv")) %>% 
   dplyr::sample_frac(.005)
 
 set.seed(3000)
@@ -35,17 +35,35 @@ rec <- recipe(classification ~ econ_dsvntg + tag_ed_fg + enrl_grd + gndr + ethni
 
 #slide64-66, 70-72 - create parameters and grid
 
-knn_params <- parameters(neighbors(range = c(1,20)), weight_func(), dist_power())
+knn_params <- parameters(neighbors(range = c(1,20)), dist_power())
 knn_gridmax <- grid_max_entropy(knn_params, size = 25)
 
 #ggplot of knn_gridmax
-
 knn_gridmax %>% 
   ggplot(aes(neighbors, dist_power)) +
            geom_point() 
 ggsave("neighbors_dist.png", path = here::here("plots"))
 
 
+#knn model- slide 80
+knn2 <- nearest_neighbor()  %>%
+  set_engine("kknn") %>% 
+  set_mode("classification") %>% 
+  set_args(neighbors = tune(),
+           dist_power = tune())
+
+#fit tuned model - slide 81
+
+knn2_fit <- tune::tune_grid(
+  knn2,
+  preprocessor = rec,
+  resamples = train_cv,
+  grid = knn_gridmax,
+  control = tune::control_resamples(save_pred = TRUE)
+)
+
+knn2_fit %>% 
+  collect_metrics()
 
 
                       
