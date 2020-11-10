@@ -8,9 +8,9 @@ registerDoParallel(cl)
 foreach::getDoParWorkers()
 clusterEvalQ(cl, {library(tidymodels)})
 
-
+set.seed(3000)
 d <- read_csv(here::here("data","train.csv")) %>% 
-  dplyr::sample_frac(.005)
+  dplyr::sample_frac(.15)
 
 set.seed(3000)
 split <- initial_split(d)
@@ -39,10 +39,10 @@ knn_params <- parameters(neighbors(range = c(1,20)), dist_power())
 knn_gridmax <- grid_max_entropy(knn_params, size = 25)
 
 #ggplot of knn_gridmax
-knn_gridmax %>% 
-  ggplot(aes(neighbors, dist_power)) +
-           geom_point() 
-ggsave("neighbors_dist.png", path = here::here("plots"))
+#knn_gridmax %>% 
+#  ggplot(aes(neighbors, dist_power)) +
+#           geom_point() 
+#ggsave("neighbors_dist.png", path = here::here("plots"))
 
 
 #knn model- slide 80
@@ -62,8 +62,5 @@ knn2_fit <- tune::tune_grid(
   control = tune::control_resamples(save_pred = TRUE)
 )
 
-knn2_fit %>% 
-  show_best(metric = "roc_auc", n = 5)
-
-saveRDS(knn2_fit, "models/knn2_fit.Rds")
+saveRDS(knn2_fit, "knn2_fit.Rds")
                       

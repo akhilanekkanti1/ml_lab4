@@ -10,6 +10,7 @@ foreach::getDoParWorkers()
 clusterEvalQ(cl, {library(tidymodels)})
 
 
+set.seed(3000)
 d <- read_csv("train.csv") #%>% 
 #  dplyr::sample_frac(.005)
 
@@ -36,9 +37,9 @@ rec <- recipe(classification ~ econ_dsvntg + tag_ed_fg + enrl_grd + gndr + ethni
 prep(rec)
 
 #knn model
-lm <- nearest_neighbor(neighbors = 11)  %>%
+knn <- nearest_neighbor(neighbors = 11)  %>%
   set_engine("kknn") %>% 
   set_mode("classification")  
 
-fit1an <- fit_resamples(lm, rec, train_cv)
+fit1an <- fit_resamples(knn, rec, train_cv)
 saveRDS(fit1, "fit1an.Rds")

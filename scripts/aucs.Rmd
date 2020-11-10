@@ -30,3 +30,11 @@ show_best(prelim_an, metric = "roc_auc", n = 5)
 
 
 ```
+
+```{r}
+
+knn2_fit %>% 
+  show_best(metric = "roc_auc", n = 5)
+
+```
+
