@@ -61,5 +61,8 @@ knn2_fit <- tune::tune_grid(
   control = tune::control_resamples(save_pred = TRUE)
 )
 
+knn2_fit %>% 
+  show_best(metric = "roc_auc", n = 5)
+
 saveRDS(knn2_fit, "knn2_fit_local.Rds")
                       
