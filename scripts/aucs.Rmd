@@ -13,17 +13,21 @@ library(tidymodels)
 
 ## Preliminary Model Fit
 
-```{r auc}
-prelim <- readRDS(here::here("models", "fit1-st.Rds"))
-show_best(prelim, metric = "roc_auc", n = 5) 
+```{r st fit1 auc}
+
+prelim_st <- readRDS(here::here("models", "fit1-st.Rds"))
+show_best(prelim_st, metric = "roc_auc", n = 5) 
+
 ```
 
-```{r jp attempt auc}
+```{r jp fit1 auc}
+
 prelim_jp <- readRDS(here::here("models", "fit1jp.Rds"))
 show_best(prelim_jp, metric = "roc_auc", n = 5) 
+
 ```
 
-```{r an auc}
+```{r an fit1 auc}
 
 prelim_an <- readRDS(here::here("models", "fit1an.Rds"))
 show_best(prelim_an, metric = "roc_auc", n = 5) 
@@ -31,10 +35,22 @@ show_best(prelim_an, metric = "roc_auc", n = 5)
 
 ```
 
-```{r}
+```{r finalfit}
 
-knn2_fit %>% 
-  show_best(metric = "roc_auc", n = 5)
+knn_better <- readRDS(here::here("models", "knn2_fit.Rds"))
+show_best(knn_better, metric = "roc_auc", n = 5) 
+
+
+knn_best <- knn2_fit %>%
+  select_best(metric = "roc_auc") 
+
+# Finalize your model using the best tuning parameters
+knn_mod_final <- knn2_mod %>%
+  finalize_model(knn_best)
+
+# Finalize your recipe using the best turning parameters
+knn_rec_final <- knn2_fit %>%
+  finalize_recipe(knn_best)
 
 ```
 
