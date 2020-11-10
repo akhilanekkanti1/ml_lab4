@@ -285,6 +285,7 @@ cols(
 > 
 > # basic recipe
 > rec <- recipe(classification ~ stay_in_schl + tag_ed_fg + enrl_grd + ind_ed_fg, data = train)  %>% 
++   step_mutate(classification = ifelse(classification < 3, "below", "proficient")) %>% 
 +   step_mutate(enrl_grd = as.factor(enrl_grd)) %>% 
 +   step_unknown(all_nominal(), -all_outcomes())  %>% 
 +   step_novel(all_nominal(), -all_outcomes()) %>%
@@ -298,10 +299,8 @@ cols(
 +   set_engine("kknn")
 > 
 > fit1 <- fit_resamples(lm, rec, train_cv)
-Warning message:
-All models failed in [fit_resamples()]. See the `.notes` column. 
 > saveRDS(fit1, "fit1.Rds")
 > 
 > proc.time()
    user  system elapsed 
-175.777  14.031 398.284 
+163.928  13.389 687.673 
