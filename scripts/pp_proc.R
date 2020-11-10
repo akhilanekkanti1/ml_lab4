@@ -19,6 +19,7 @@ train_cv <- vfold_cv(train)
 
 # basic recipe
 rec <- recipe(classification ~ stay_in_schl + tag_ed_fg + enrl_grd + ind_ed_fg, data = train)  %>% 
+  step_mutate(classification = ifelse(classification < 3, "below", "proficient")) %>% 
   step_mutate(enrl_grd = as.factor(enrl_grd)) %>% 
   step_unknown(all_nominal(), -all_outcomes())  %>% 
   step_novel(all_nominal(), -all_outcomes()) %>%
