@@ -9,8 +9,8 @@ foreach::getDoParWorkers()
 clusterEvalQ(cl, {library(tidymodels)})
 
 set.seed(3000)
-d <- read_csv("train.csv") %>% 
-  dplyr::sample_frac(.15)
+d <- read_csv(here::here("data", "train.csv")) %>% 
+  dplyr::sample_frac(.005)
 
 set.seed(3000)
 split <- initial_split(d)
@@ -18,7 +18,6 @@ train <- training(split)
 train_cv <- vfold_cv(train)
 
 # basic recipe
-
 rec <- recipe(classification ~ econ_dsvntg + tag_ed_fg + enrl_grd + gndr + ethnic_cd, data = train)  %>% 
   step_mutate(gndr = as.factor(gndr),
               ethnic_cd = as.factor(ethnic_cd),
@@ -62,5 +61,5 @@ knn2_fit <- tune::tune_grid(
   control = tune::control_resamples(save_pred = TRUE)
 )
 
-saveRDS(knn2_fit, "knn2_fit.Rds")
+saveRDS(knn2_fit, "knn2_fit_local.Rds")
                       
