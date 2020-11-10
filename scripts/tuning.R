@@ -63,7 +63,7 @@ knn2_fit <- tune::tune_grid(
 )
 
 knn2_fit %>% 
-  collect_metrics()
+  show_best(metric = "roc_auc", n = 5)
 
-
+saveRDS(knn2_fit, "models/knn2_fit.Rds")
                       
