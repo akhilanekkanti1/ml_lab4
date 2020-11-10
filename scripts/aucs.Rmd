@@ -23,3 +23,8 @@ prelim_jp <- readRDS(here::here("models", "fit1jp.Rds"))
 show_best(prelim_jp, metric = "roc_auc", n = 5) 
 ```
 
+```{r an auc}
+
+prelim_an <- readRDS(here::here("models", "fit1an.Rds"))
+show_best(prelim_an, metric = "roc_auc", n = 5) 
+```

@@ -1,6 +1,20 @@
+---
+title: "tuning"
+author: "Akhila, Shaina, JP"
+date: "11/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
 library(tidyverse)
 library(tidymodels)
 library(doParallel)
+
+```
+
+```{r}
 
 all_cores <- parallel::detectCores(logical = FALSE)
 
@@ -9,6 +23,9 @@ registerDoParallel(cl)
 foreach::getDoParWorkers()
 clusterEvalQ(cl, {library(tidymodels)})
 
+```
+
+```{r}
 
 d <- read_csv("train.csv") #%>% 
 #  dplyr::sample_frac(.005)
@@ -18,8 +35,10 @@ split <- initial_split(d)
 train <- training(split)
 train_cv <- vfold_cv(train)
 
-# basic recipe
+```
 
+```{r}
+# basic recipe
 rec <- recipe(classification ~ econ_dsvntg + tag_ed_fg + enrl_grd + gndr + ethnic_cd, data = train)  %>% 
   step_mutate(gndr = as.factor(gndr),
               ethnic_cd = as.factor(ethnic_cd),
@@ -35,6 +54,11 @@ rec <- recipe(classification ~ econ_dsvntg + tag_ed_fg + enrl_grd + gndr + ethni
 
 prep(rec)
 
+```
+
+
+```{r}
+
 # linear regression model
 lm <- nearest_neighbor(neighbors = 11)  %>%
   set_engine("kknn") %>% 
@@ -42,3 +66,7 @@ lm <- nearest_neighbor(neighbors = 11)  %>%
 
 fit1an <- fit_resamples(lm, rec, train_cv)
 saveRDS(fit1, "fit1an.Rds")
+
+
+```
+
