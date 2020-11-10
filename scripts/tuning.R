@@ -9,7 +9,7 @@ foreach::getDoParWorkers()
 clusterEvalQ(cl, {library(tidymodels)})
 
 set.seed(3000)
-d <- read_csv(here::here("data","train.csv")) %>% 
+d <- read_csv("train.csv") %>% 
   dplyr::sample_frac(.15)
 
 set.seed(3000)
