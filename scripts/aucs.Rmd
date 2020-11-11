@@ -46,7 +46,9 @@ show_best(final_loc, metric = "roc_auc", n = 5)
 ## Final Fit - Talapas
 ```{r finalfit talapas}
 
-XX <- readRDS(here::here("models", "....Rds"))
-show_best(XX, metric = "roc_auc", n = 5) 
+finalfit <- readRDS(here::here("models", "knn2_finalfit-st.Rds"))
+
+finalfit %>% 
+  collect_metrics()
 
 ```
