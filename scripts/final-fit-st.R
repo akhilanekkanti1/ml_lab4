@@ -68,6 +68,6 @@ knn_final_res <- last_fit(
   preprocessor = knn_rec_final,
   split = split)
 
-saveRDS(knn2_final_res, "knn2_finalfit-st.Rds")
+saveRDS(knn_final_res, "knn2_finalfit-st.Rds")
 
 
