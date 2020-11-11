@@ -32,26 +32,14 @@ rec <- recipe(classification ~ econ_dsvntg + tag_ed_fg + enrl_grd + gndr + ethni
   step_nzv(all_predictors())  
 
 
-#slide64-66, 70-72 - create parameters and grid
-
-knn_params <- parameters(neighbors(range = c(1,20)), dist_power())
-knn_gridmax <- grid_max_entropy(knn_params, size = 25)
-
-#ggplot of knn_gridmax
-#knn_gridmax %>% 
-#  ggplot(aes(neighbors, dist_power)) +
-#           geom_point() 
-#ggsave("neighbors_dist.png", path = here::here("plots"))
-
-
-#knn model- slide 80
 knn2 <- nearest_neighbor()  %>%
   set_engine("kknn") %>% 
   set_mode("classification") %>% 
   set_args(neighbors = tune(),
            dist_power = tune())
 
-#fit tuned model - slide 81
+knn_params <- parameters(neighbors(range = c(1,20)), dist_power())
+knn_gridmax <- grid_max_entropy(knn_params, size = 25)
 
 knn2_fit <- tune::tune_grid(
   knn2,
@@ -61,27 +49,23 @@ knn2_fit <- tune::tune_grid(
   control = tune::control_resamples(save_pred = TRUE)
 )
 
-
 ######################FINALFIT
 
 knn_best <- knn2_fit %>% 
   select_best(metric = "roc_auc") 
 
-# Finalize your model using the best tuning parameters
 knn_mod_final <- knn2 %>%
   finalize_model(knn_best)
 
-# Finalize your recipe using the best turning parameters
 knn_rec_final <- rec %>%
   finalize_recipe(knn_best)
 
-#run final fit
-
-registerDoSEQ() #need to unregister parallel processing in order to use all_nominal()
+registerDoSEQ() 
 knn_final_res <- last_fit(
   knn_mod_final,
   preprocessor = knn_rec_final,
   split = split)
 
-saveRDS(knn2_final_res, "knn2_finalfit.Rds")
+saveRDS(knn2_final_res, "knn2_finalfit_an.Rds")
+
 
