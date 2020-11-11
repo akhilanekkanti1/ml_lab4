@@ -13,8 +13,8 @@ clusterEvalQ(cl, {library(tidymodels)})
 
 
 set.seed(3000)
-d <- read_csv("data/train.csv") #%>% 
-#  dplyr::sample_frac(.005)
+d <- read_csv("data/train.csv") %>% 
+  dplyr::sample_frac(.15) #UNCOMMENTED - to run in talapas for tuning (re-run if failed)
 
 set.seed(3000)
 split <- initial_split(d)
