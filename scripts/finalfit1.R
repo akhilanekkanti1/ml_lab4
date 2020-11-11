@@ -61,8 +61,27 @@ knn2_fit <- tune::tune_grid(
   control = tune::control_resamples(save_pred = TRUE)
 )
 
-knn2_fit %>% 
-  show_best(metric = "roc_auc", n = 5)
 
-saveRDS(knn2_fit, "knn2_fit_local.Rds")
-                      
+######################FINALFIT
+
+knn_best <- knn2_fit %>% 
+  select_best(metric = "roc_auc") 
+
+# Finalize your model using the best tuning parameters
+knn_mod_final <- knn2 %>%
+  finalize_model(knn_best)
+
+# Finalize your recipe using the best turning parameters
+knn_rec_final <- rec %>%
+  finalize_recipe(knn_best)
+
+#run final fit
+
+registerDoSEQ() #need to unregister parallel processing in order to use all_nominal()
+knn_final_res <- last_fit(
+  knn_mod_final,
+  preprocessor = knn_rec_final,
+  split = split)
+
+saveRDS(knn2_final_res, "knn2_finalfit.Rds")
+
