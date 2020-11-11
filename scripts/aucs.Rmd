@@ -11,7 +11,7 @@ library(tidyverse)
 library(tidymodels)
 ```
 
-## Preliminary Model Fit
+## Preliminary Model Fits
 
 ```{r st fit1 auc}
 
@@ -35,11 +35,18 @@ show_best(prelim_an, metric = "roc_auc", n = 5)
 
 ```
 
-```{r finalfit}
+## Final Fit - Local
+```{r finalfit local}
 
-knn_better <- readRDS(here::here("models", "knn2_fit.Rds"))
-
-show_best(knn_better, metric = "roc_auc", n = 5) 
+final_loc <- readRDS(here::here("models", "knn2_fit_local.Rds"))
+show_best(final_loc, metric = "roc_auc", n = 5) 
 
 ```
 
+## Final Fit - Talapas
+```{r finalfit talapas}
+
+XX <- readRDS(here::here("models", "....Rds"))
+show_best(XX, metric = "roc_auc", n = 5) 
+
+```
