@@ -1,4 +1,6 @@
-knn_best <- readRDS("knn2_fit.Rds") %>% 
+knn_best1 <- readRDS("knn2_fit.Rds")
+
+knn_best <- knn_best1 %>% 
   select_best(metric = "roc_auc") 
 
 # Finalize your model using the best tuning parameters
@@ -17,4 +19,5 @@ knn_final_res <- last_fit(
   preprocessor = knn_rec_final,
   split = split)
 
+saveRDS(knn2_final_res, "knn2_finalfit.Rds")
 
