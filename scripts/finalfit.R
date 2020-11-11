@@ -1,5 +1,4 @@
-
-knn_best <- knn2_fit %>%
+knn_best <- readRDS("knn2_fit.Rds") %>% 
   select_best(metric = "roc_auc") 
 
 # Finalize your model using the best tuning parameters
@@ -11,16 +10,11 @@ knn_rec_final <- rec %>%
   finalize_recipe(knn_best)
 
 #run final fit
-cl <- makeCluster(8)
-registerDoParallel(cl)
 
+registerDoSEQ() #need to unregister parallel processing in order to use all_nominal()
 knn_final_res <- last_fit(
   knn_mod_final,
   preprocessor = knn_rec_final,
   split = split)
 
-stopCluster(cl)
 
-#Collect metrics
-knn_final_res %>%
-  collect_()
