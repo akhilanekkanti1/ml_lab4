@@ -17,9 +17,11 @@ full_train <- read_csv("data/train.csv",
   select(-classification)
 
 
-frl <- import(here("data","frl.csv"),
-              setclass = "tbl_df")  %>% 
+frl <- import(here("data","frl.csv"))
+            
+frl <- frl %>% 
   janitor::clean_names()  %>% 
+  setclass = "tbl_df"  %>% 
   filter(st == "OR")  %>%
   select(ncessch, lunch_program, student_count)  %>% 
   mutate(student_count = replace_na(student_count, 0))  %>% 
