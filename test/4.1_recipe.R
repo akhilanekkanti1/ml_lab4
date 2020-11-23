@@ -163,3 +163,4 @@ predictions <- predict(final_fit, new_data = halfbaked_test)
   
 final_predictions <- tibble(Id = halfbaked_test$id, Predicted = predictions$.pred)
 write_csv(final_predictions, "final_predictions.csv")
+

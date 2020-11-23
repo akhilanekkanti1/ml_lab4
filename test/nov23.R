@@ -159,4 +159,18 @@ finalbest <- last_fit(finalwf,
                       split = d_split)
 
 predictions <- pluck(finalbest$.predictions[[1]])
-write.csv(predictions, "predictions.csv")
+write.csv(train_predictions, "predictions.csv")
+
+full_test <- read_csv("../input/edld-654-fall-2020/test.csv",
+                      col_types = cols(.default = col_guess(), 
+                                       calc_admn_cd = col_character()))
+
+
+##################test predictions
+testdata <- read_csv(here("data", "test.csv"), 
+                     col_types = cols(.default = col_guess(), 
+                      calc_admn_cd = col_character()))
+
+frl_test <- left_join(testdata, frl)
+
+fit_workflow <- fit(workflow, frl_test)
