@@ -344,9 +344,9 @@ translate(model_of_forests)
 forest_flo <- bag_flow %>% 
   update_model(model_of_forests)
 
-forest_flozo <- workflow() %>% 
-  add_recipe(rec_yoself) %>% 
-  add_model(model_of_forests)
+# forest_flozo <- workflow() %>% 
+#   add_recipe(rec_yoself) %>% 
+#   add_model(model_of_forests) #didn't
 
 
 
@@ -378,6 +378,10 @@ plan(sequential)
 4. Show the single best estimates for each of the three performance metrics.
 
 ```{r}
+
+select_best(tune_random_trees, "rmse")
+select_best(tune_random_trees, "rsq")
+select_best(tune_random_trees, "huber_loss")
 
 ```
 
