@@ -409,13 +409,19 @@ rf_roots <- function(x){
   unnest(cols = c(roots))
 }
 
-
+rf_root_node <- rf_roots(tune_random_trees)
+  
 ```
 
 6. Produce a plot of the frequency of features at the root node of the trees in your bagged model.
 
 ```{r}
 
+rf_root_node %>% 
+  ggplot(mapping = aes(x = fct_rev(fct_infreq(roots)))) + 
+  geom_bar() + 
+  coord_flip() + 
+  labs(x = "roots", y = "count")
 
 ```
 
