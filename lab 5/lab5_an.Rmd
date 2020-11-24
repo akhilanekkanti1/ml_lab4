@@ -24,6 +24,7 @@ library(rio)
 library(here)
 library(vip)
 library(rpart.plot)
+library(ranger)
 
 theme_set(theme_minimal())
 ```
@@ -246,6 +247,8 @@ bag_flow <- tuned_workflow %>%
 
 #### **Question: Before you run the code, how many trees will this function execute?**
 
+#### We expect the function to execute (10 folds x 10 models x 10 grids) 1000 trees. 
+
 ```{r}
 
 library(future)
@@ -257,7 +260,8 @@ tune_okay_trees <- tune_grid(bag_flow,
                        metrics = metric_set(rmse, rsq, huber_loss),
                        control = control_resamples(verbose = TRUE, 
                                save_pred = TRUE, 
-                               extract = function(x) x)
+                               extract = function(x) extract_model(x)
+)
 )
 tictoc::toc()
 plan(sequential)
@@ -268,6 +272,10 @@ plan(sequential)
 4. Show the single best estimates for each of the three performance metrics and the tuning parameter values associated with each.
 
 ```{r}
+
+select_best(tune_okay_trees, "rmse")
+select_best(tune_okay_trees, "rsq")
+select_best(tune_okay_trees, "huber_loss")
 
 ```
 
@@ -287,6 +295,8 @@ bag_roots <- function(x){
                      ~as.character(.x$fit$frame[1, 1]))) %>%
   select(root)  
 }
+
+t <- bag_roots(tune_okay_trees)
 ```
 
 6. Produce a plot of the frequency of features at the root node of the trees in your bagged model.
@@ -294,6 +304,11 @@ bag_roots <- function(x){
 
 ```{r}
 
+bag_roots(tune_okay_trees) %>% 
+  ggplot(mapping = aes(x = fct_rev(fct_infreq(root)))) + 
+  geom_bar() + 
+  coord_flip() + 
+  labs(x = "root", y = "count")
 
 ```
 
@@ -305,10 +320,35 @@ bag_roots <- function(x){
 
 ```{r}
 
+cores <- parallel::detectCores()
+
+model_of_forests <- rand_forest() %>%
+  set_engine("ranger",
+             num.threads = cores, #argument from {ranger}
+             importance = "permutation", #argument from {ranger}
+             verbose = TRUE) %>% #argument from {ranger}
+  set_mode("regression") %>% 
+  set_args(mtry = tune(),
+        trees = 1000,
+        min_n = tune())
+
+translate(model_of_forests)
+
+      
+  
 ```
 
 2. Create a `workflow` object that combines your `recipe` and your random forest model specification.
 ```{r}
+
+forest_flo <- bag_flow %>% 
+  update_model(model_of_forests)
+
+forest_flozo <- workflow() %>% 
+  add_recipe(rec_yoself) %>% 
+  add_model(model_of_forests)
+
+
 
 ```
 
@@ -318,6 +358,20 @@ bag_roots <- function(x){
 * Record the time it takes to run
 
 ```{r}
+
+library(future)
+plan(multisession)
+tictoc::tic()
+tune_random_trees <- tune_grid(forest_flo, 
+                       train_cv, 
+                       grid = 10,
+                       metrics = metric_set(rmse, rsq, huber_loss),
+                       control = control_resamples(verbose = TRUE, 
+                               save_pred = TRUE, 
+                               extract = function(x) x))
+
+tictoc::toc()
+plan(sequential)
 
 ```
 
