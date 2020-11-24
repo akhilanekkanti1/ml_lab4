@@ -428,6 +428,9 @@ rf_root_node %>%
 7. Please explain why the bagged tree root node figure and the random forest root node figure are different.
 
 ```{r}
+# not sure if this is correct, but its in my notes
+#Bagged tree models split at the same root variable (most important predictor)
+#Random forest models split at random root variables.
 
 
 ```
