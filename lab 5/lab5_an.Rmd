@@ -102,7 +102,7 @@ frl <- frl1 %>%
 
 
 train_frl <- left_join(train, frl)
-d <- right_join(train_frl, ethnicities)
+d <- left_join(train_frl, ethnicities)
 
 d <- d %>% 
   sample_frac(.10)
@@ -119,11 +119,11 @@ Use 10-fold CV to resample the training set, stratified by `score`.
 
 set.seed(3000)
 
-d_split <- initial_split(d)
+d_split <- initial_split(d, strata = "score")
 
 d_train <- training(d_split)
 d_test  <- testing(d_split)
-train_cv <- vfold_cv(train, strata = score)
+train_cv <- vfold_cv(d_train, strata = "score")
 
 ```
 
@@ -195,17 +195,19 @@ tune_simple_tree <- tune_grid(simple_tree,
 tictoc::toc()
 
 
-m01 <- fit(test, score ~ ., prep(rec_yoself) %>%  bake(d_train))
 
 ```
 
-```{r}
-
-```
 
 4. Show the best estimates for each of the three performance metrics and the tuning parameter values associated with each.
 ```{r}
 
+tune_simple_tree %>% 
+  collect_metrics()
+
+show_best(tune_simple_tree, "rmse")
+show_best(tune_simple_tree, "rsq")
+show_best(tune_simple_tree, "huber_loss")
 
 ```
 
@@ -217,10 +219,21 @@ m01 <- fit(test, score ~ ., prep(rec_yoself) %>%  bake(d_train))
 
 ```{r}
 
+library(baguette)
+okay_trees <- bag_tree() %>% 
+  set_mode("regression") %>% 
+  set_args(cost_complexity = tune(), min_n = tune()) %>% 
+  set_engine("rpart", times = 10) 
+
+
 ```
 
 2. Create a `workflow` object that combines your `recipe` and your bagged tree model specification.
 ```{r}
+
+bag_flow <- tuned_workflow %>% 
+  update_model(okay_trees)  
+  
 
 ```
 
@@ -234,6 +247,21 @@ m01 <- fit(test, score ~ ., prep(rec_yoself) %>%  bake(d_train))
 #### **Question: Before you run the code, how many trees will this function execute?**
 
 ```{r}
+
+library(future)
+plan(multisession)
+tictoc::tic()
+tune_okay_trees <- tune_grid(bag_flow, 
+                       train_cv, 
+                       grid = 10, 
+                       metrics = metric_set(rmse, rsq, huber_loss),
+                       control = control_resamples(verbose = TRUE, 
+                               save_pred = TRUE, 
+                               extract = function(x) x)
+)
+tictoc::toc()
+plan(sequential)
+
 
 ```
 
