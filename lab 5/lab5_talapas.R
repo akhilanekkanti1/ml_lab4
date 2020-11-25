@@ -1,24 +1,36 @@
 library(tidyverse)
-library(rio)
 library(tidymodels)
-library(doParallel)
-library(workflows)
+library(baguette)
+library(future)
+library(rio)
+library(vip)
+library(ranger)
 
-all_cores <- parallel::detectCores(logical = FALSE)
 
-cl <- makePSOCKcluster(all_cores)
-registerDoParallel(cl)
-foreach::getDoParWorkers()
-clusterEvalQ(cl, {library(tidymodels)})
+###################data
 
-full_train <- read_csv("train.csv",
-                       col_types = cols(.default = col_guess(), 
-                        calc_admn_cd = col_character()))  %>% 
-              select(-classification)
+train <- read_csv("train.csv",
+                  col_types = cols(.default = col_guess(), 
+                                   calc_admn_cd = col_character()))  %>% 
+  select(-classification) 
 
-testdata <- read_csv("test.csv",
-                       col_types = cols(.default = col_guess(), 
-                                        calc_admn_cd = col_character()))
+or_schools <- readxl::read_xlsx(here("data", "fallmembershipreport_20192020.xlsx"),
+                                sheet = 4) 
+
+ethnicities <- or_schools %>% 
+  select(attnd_schl_inst_id = `Attending School ID`,
+         sch_name = `School Name`,
+         contains("%")) %>% 
+  janitor::clean_names()
+names(ethnicities) <- gsub("x2019_20_percent", "p", names(ethnicities))
+
+staff <- import("staff.csv",
+                setclass = "tbl_df") %>% 
+  janitor::clean_names() %>%
+  filter(st == "OR") %>%
+  select(ncessch,schid,teachers) %>%
+  mutate(ncessch = as.double(ncessch))
+
 
 frl <- import("frl.csv",
               setclass = "tbl_df")  %>% 
@@ -31,39 +43,36 @@ frl <- import("frl.csv",
   janitor::clean_names()  %>% 
   mutate(ncessch = as.double(ncessch))
 
+
 stu_counts <- import("achievement-gaps-geocoded.csv",
                      setclass = "tbl_df")  %>% 
   filter(state == "OR" & year == 1718)  %>% 
   count(ncessch, wt = n)  %>% 
   mutate(ncessch = as.double(ncessch))
 
-staff <- import("staff.csv",
-                setclass = "tbl_df") %>% 
-  janitor::clean_names() %>%
-  filter(st == "OR") %>%
-  select(ncessch,schid,teachers) %>%
-  mutate(ncessch = as.double(ncessch))
 
-
-frl <- left_join(frl, stu_counts)
-frl1 <- left_join(frl, staff)
+frl_stu <- left_join(frl, stu_counts)
+frl1 <- left_join(frl_stu, staff)
 
 frl <- frl1 %>% 
   mutate(fl_prop = free_lunch_qualified/n,
          rl_prop = reduced_price_lunch_qualified/n) %>%
   select(ncessch,fl_prop, rl_prop, teachers)
 
-d <- left_join(full_train, frl) %>%
-sample_frac(.45)
 
-set.seed(3000)
-(d_split <- initial_split(d)) 
+train_frl <- left_join(train, frl)
+d <- left_join(train_frl, ethnicities)
+
+
+######################### split
+
+d_split <- initial_split(d, strata = "score")
 
 d_train <- training(d_split)
 d_test  <- testing(d_split)
+train_cv <- vfold_cv(d_train, strata = "score")
 
-set.seed(3000)
-d_cv <- vfold_cv(d_train, v = 10)
+######################## recipe
 
 rec_yoself <- recipe(score ~ .,data = d_train) %>%
   step_mutate(tst_dt = lubridate::mdy_hms(tst_dt)) %>%
@@ -75,91 +84,87 @@ rec_yoself <- recipe(score ~ .,data = d_train) %>%
   #step_mutate(z_rlprop = log(rl_prop),
   #           z_flprop = log(fl_prop)) %>% 
   #step_rm(fl_prop, rl_prop) %>% #remove potentially redundant variables
-  step_normalize(rl_prop, fl_prop, teachers) %>%
+  step_normalize(all_numeric(), -all_outcomes(), -has_role("id vars")) %>%
   step_medianimpute(all_numeric(), -all_outcomes(), -has_role("id vars")) %>% #medianimpute only proportion variables 
   step_interact(terms = ~lat:lon)
 
-halfbaked <- rec_yoself %>%
-  prep %>%
-  bake(d_train)
+rec_yoself %>% 
+  prep() %>% 
+  juice()
 
-halfbaked
+##########################
 
-set.seed(3000)
-
-(cores <- parallel::detectCores())
+cores <- parallel::detectCores()
 
 model_of_forests <- rand_forest() %>%
   set_engine("ranger",
-             num.threads = 28, #argument from {ranger}
+             num.threads = cores, #argument from {ranger}
              importance = "permutation", #argument from {ranger}
              verbose = TRUE) %>% #argument from {ranger}
-  set_mode("regression")
-
-werkflo <- workflow() %>%
-  add_recipe(rec_yoself) %>%
-  add_model(model_of_forests)
-
-set.seed(3000)
-fit_recyoself <- fit_resamples(
-  werkflo,
-  resamples = d_cv,
-  metrics = metric_set(rmse),
-  control = control_resamples(verbose = TRUE, #prints model fitting process
-                              save_pred = TRUE, #saves out of sample predictions
-                              extract = function(x) x))
-
-fit_recyoself %>%
-  collect_metrics()
-#oldrec: mean = 88.73802 , n = 10 , std_error = 0.2426
-# mean = 90.55, se = .58, sample frac = .1 LM
-# mean = 90.85, se = .66, sample frac .1 rando forest
-
-
-you_call_that_a_model <- model_of_forests %>%
+  set_mode("regression") %>% 
   set_args(mtry = tune(),
            trees = 1000,
            min_n = tune())
 
-ourgrid <- grid_regular(mtry(range = c(1, 10)),
-                        min_n(range = c(4, 40)),
-                        levels = c(5, 5)) 
+
+forest_flo <- workflow() %>%
+  add_recipe(rec_yoself) %>%
+  add_model(model_of_forests)
+
+######################
 
 set.seed(3000)
-##
-workflow <- werkflo %>%
-  update_model(you_call_that_a_model)
+plan(multisession)
+tictoc::tic()
+tune_random_trees <- tune_grid(forest_flo, 
+                               train_cv, 
+                               grid = 10,
+                               metrics = metric_set(rmse, rsq, huber_loss),
+                               control = control_resamples(verbose = TRUE, 
+                                                           save_pred = TRUE, 
+                                                           extract = function(x) x))
 
+tictoc::toc()
+plan(sequential)
 
-fit_recyoself_again <- tune_grid(
-  workflow,
-  resamples = d_cv,
-  grid = ourgrid,
-  metrics = metric_set(rmse),
-  control = control_resamples(verbose = TRUE, #prints model fitting process
-                              save_pred = TRUE, #saves out of sample predictions
-                              extract = function(x) x)) 
+#######################
 
-# mean = 89.82, se = .58, mtry = 4, min_n = 40 .1 sample frac
+train_best <- select_best(tune_random_trees, metric = "rmse")
 
-oob <- fit_recyoself_again %>%
-  mutate(oob = map_dbl(.extracts,
-                       ~pluck(.x$.extracts, 1)$fit$fit$fit$prediction.error)) %>%
-  select(id, oob)
-
-fit_recyoself_again %>%  collect_metrics(summarize = FALSE)
-
-best <- select_best(fit_recyoself_again, metric = "rmse")
-
-finalwf <- finalize_workflow(
-  werkflo,
-  best
+train_wf_final <- finalize_workflow(
+  forest_flo,
+  train_best
 )
 
+tictoc::tic()
 set.seed(3000)
-finalbest <- last_fit(finalwf,
-                      split = d_split)
+train_res_final <- last_fit(train_wf_final,
+                            split = d_split)
+tictoc::toc()
 
-predictions <- pluck(finalbest$.predictions[[1]])
-write.csv(predictions, "predictions.csv")
+train_res_final %>% 
+  collect_metrics()
+
+###########################
+test <- read_csv("test.csv",
+                 col_types = cols(.default = col_guess(), 
+                                  calc_admn_cd = col_character()))
+
+#join with frl
+test <- left_join(test, frl)
+test1 <- left_join(test, ethnicities)
+
+#workflow
+fit_workflow <- fit(train_wf_final, d)
+
+#use model to make predictions for test dataset
+preds_final <- predict(fit_workflow, test1)
+
+######################
+pred_frame <- tibble(Id = test1$id, Predicted = preds_final$.pred)
+
+write_csv(pred_frame, "fit2.csv")
+write_csv(preds_final, "fit2_noid.csv")
+
+
 
