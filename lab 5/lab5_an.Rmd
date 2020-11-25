@@ -459,6 +459,8 @@ sqrt(obb_pred_error) #132.65
 
 Consider the four models you fit: (a) decision tree, (b) bagged tree, (c) random forest fit on resamples, and (d) random forest fit on the training data. Which model would you use for your final fit? Please consider the performance metrics as well as the run time, and briefly explain your decision. 
 
+Answer: The most computationally expensive model was the bagged tree, and the least expensive was the out-of-bag (random forest on training data). The best fitting model was the random forest on resamples, and took the same amount of time to run as our simplest decision tree model. The model we would use for our final fit is the random forest fit on resamples, because it has the lowest RMSE and doesn't take too long to run. 
+
 ```{r}
 #dt rmse
 show_best(tune_simple_tree, "rmse", n = 1) #116.67
