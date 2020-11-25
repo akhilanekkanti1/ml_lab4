@@ -427,13 +427,8 @@ rf_root_node %>%
 
 7. Please explain why the bagged tree root node figure and the random forest root node figure are different.
 
-```{r}
-# not sure if this is correct, but its in my notes
-#Bagged tree models split at the same root variable (most important predictor) - both use bootstrap aggregation (averages all the models)
-#Random forest models split at random root variables.
+Answer: Bagged tree models split at the same root variable (most important predictor), whereas random forest models split at random root variables. So although both use bootstrap aggregation (averages all the models), they are starting at different nodes.
 
-
-```
 
 8. Apply the `fit` function to your random forest `workflow` object and your **full** training data.
 In class we talked about the idea that bagged tree and random forest models use resampling, and one *could* use the OOB prediction error provided by the models to estimate model performance.
@@ -442,6 +437,7 @@ In class we talked about the idea that bagged tree and random forest models use 
 * Extract the oob prediction error from your fitted object. If you print your fitted object, you will see a value for *OOB prediction error (MSE)*. You can take the `sqrt()` of this value to get the *rmse*. Or you can extract it by running: `sqrt(fit-object-name-here$fit$fit$fit$prediction.error)`.
 * How does OOB *rmse* here compare to the mean *rmse* estimate from your 10-fold CV random forest? How might 10-fold CV influence bias-variance?
 
+Answer: The OOB rmse is much larger than the mean rmse from the 10-fold CV random forest. Cross-validation helps with less bias compared to OOB because of sampling with replacement. Cross-validation has more variability compared to OOB, but is more useful for small datasets since OOB relies on replacement from the sample. 
 
 
 ```{r}
@@ -477,7 +473,7 @@ show_best(tune_random_trees, "rmse", n = 1) #108.38
 #subset run time - ~69sec
 
 #rf obb rmse
-sqrt(obb_pred_error) #132.65
+sqrt(obb_pred_error) #~132.65
 #subset run time - 1sec
 
 
