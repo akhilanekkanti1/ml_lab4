@@ -481,5 +481,22 @@ sqrt(obb_pred_error) #~132.65
 
 ```
 
+```{r}
+
+train_best <- select_best(tune_random_trees, metric = metric_set("rmse", "huberloss", "rsq"))
+
+train_wf_final <- finalize_workflow(
+forest_flo,
+train_best
+)
+
+tictoc::tic()
+set.seed(3000)
+train_res_final <- last_fit(train_wf_final,
+split = d_split)
+tictoc::toc()
+
+
+```
 
 
