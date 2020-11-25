@@ -1,0 +1,533 @@
+---
+title: "Lab 5"
+subtitle: "Random Forests/Bagging"
+author: "Akhila, Shaina, JP"
+date: "Assigned 11/18/20, Due 11/25/20"
+output:
+  html_document: 
+    toc: true
+    toc_float: true
+    theme: "journal"
+    css: "website-custom.css"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE,
+                      warning = FALSE,
+                      cache = TRUE)
+
+library(tidyverse)
+library(tidymodels)
+library(baguette)
+library(future)
+library(rio)
+library(here)
+library(vip)
+library(rpart.plot)
+library(ranger)
+
+theme_set(theme_minimal())
+```
+
+
+
+## Data
+
+Read in the `train.csv` data.
+
+* Because some of the models will take some time run, randomly sample 1% of the data (be sure to use `set.seed`).
+* Remove the *classification* variable.
+
+Read in the `fallmembershipreport_20192020.xlsx` data.
+
+* Select `Attending School ID`, `School Name`, and all columns that represent the race/ethnicity percentages for the schools (there is example code in recent class slides).
+
+Join the two data sets.
+
+If you have accessed outside data to help increase the performance of your models for the final project (e.g., [NCES](https://nces.ed.gov/)), you can read in and join those data as well.
+
+```{r}
+
+train <- read_csv(here("data","train.csv"),
+                       col_types = cols(.default = col_guess(), 
+                                        calc_admn_cd = col_character()))  %>% 
+  select(-classification) %>% 
+  sample_frac(.01)
+
+or_schools <- readxl::read_xlsx(here("data", "fallmembershipreport_20192020.xlsx"),
+                                 sheet = 4) 
+
+
+ethnicities <- or_schools %>% 
+  select(attnd_schl_inst_id = `Attending School ID`,
+         sch_name = `School Name`,
+         contains("%")) %>% 
+  janitor::clean_names()
+names(ethnicities) <- gsub("x2019_20_percent", "p", names(ethnicities))
+
+staff <- import(here("data","staff.csv"),
+                setclass = "tbl_df") %>% 
+  janitor::clean_names() %>%
+  filter(st == "OR") %>%
+  select(ncessch,schid,teachers) %>%
+  mutate(ncessch = as.double(ncessch))
+
+
+frl <- import(here("data","frl.csv"),
+              setclass = "tbl_df")  %>% 
+  janitor::clean_names()  %>% 
+  filter(st == "OR")  %>%
+  select(ncessch, lunch_program, student_count)  %>% 
+  mutate(student_count = replace_na(student_count, 0))  %>% 
+  pivot_wider(names_from = lunch_program,
+              values_from = student_count)  %>% 
+  janitor::clean_names()  %>% 
+  mutate(ncessch = as.double(ncessch))
+
+
+stu_counts <- import(here("data","achievement-gaps-geocoded.csv"),
+                     setclass = "tbl_df")  %>% 
+  filter(state == "OR" & year == 1718)  %>% 
+  count(ncessch, wt = n)  %>% 
+  mutate(ncessch = as.double(ncessch))
+
+
+
+frl_stu <- left_join(frl, stu_counts)
+frl1 <- left_join(frl_stu, staff)
+
+frl <- frl1 %>% 
+  mutate(fl_prop = free_lunch_qualified/n,
+         rl_prop = reduced_price_lunch_qualified/n) %>%
+  select(ncessch,fl_prop, rl_prop, teachers)
+
+
+train_frl <- left_join(train, frl)
+d <- left_join(train_frl, ethnicities)
+
+d <- d %>% 
+  sample_frac(.10)
+
+```
+
+## Split and Resample
+
+Split joined data from above into a training set and test set, stratified by the outcome `score`.
+
+Use 10-fold CV to resample the training set, stratified by `score`.
+
+```{r}
+
+set.seed(3000)
+
+d_split <- initial_split(d, strata = "score")
+
+d_train <- training(d_split)
+d_test  <- testing(d_split)
+train_cv <- vfold_cv(d_train, strata = "score")
+
+```
+
+## Preprocess
+
+Create one `recipe` to prepare your data for CART, bagged tree, and random forest models.
+
+This lab could potentially serve as a template for your **Premilinary Fit 2**, or your final model prediction for the **Final Project**, so consider applying what might be your best model formula and the necessary preprocessing steps.
+
+```{r}
+
+rec_yoself <- recipe(score ~ .,data = d_train) %>%
+    step_mutate(tst_dt = lubridate::mdy_hms(tst_dt)) %>%
+      update_role(contains("id"), ncessch, new_role = "id vars") %>%
+    step_unknown(all_nominal()) %>% 
+    step_novel(all_nominal()) %>% 
+    step_dummy(all_nominal()) %>% 
+    step_nzv(all_predictors()) %>%
+    #step_mutate(z_rlprop = log(rl_prop),
+    #           z_flprop = log(fl_prop)) %>% 
+    #step_rm(fl_prop, rl_prop) %>% #remove potentially redundant variables
+    step_normalize(all_numeric(), -all_outcomes(), -has_role("id vars")) %>%
+    step_medianimpute(all_numeric(), -all_outcomes(), -has_role("id vars")) %>% #medianimpute only proportion variables 
+    step_interact(terms = ~lat:lon)
+
+rec_yoself %>% 
+  prep() %>% 
+  juice()
+
+```
+
+## Decision Tree
+
+1. Create a `parsnip` CART model using`{rpart}` for the estimation, tuning the cost complexity and minimum $n$ for a terminal node.
+```{r}
+
+library(rpart)
+
+simple_tree <- decision_tree() %>% 
+  set_mode("regression") %>% 
+  set_engine("rpart") %>% 
+  set_args(cost_complexity = tune(), min_n = tune())
+
+
+
+```
+
+2. Create a `workflow` object that combines your `recipe` and your `parsnip` objects.
+```{r}
+
+tuned_workflow <- workflow() %>%
+  add_recipe(rec_yoself) %>%
+  add_model(simple_tree)
+
+```
+
+3. Tune your model with `tune_grid`
+* Use `grid = 10` to choose 10 grid points automatically
+* In the `metrics` argument, please include `rmse`, `rsq`, and `huber_loss`
+* Record the time it takes to run. You could use `{tictoc}`, or you could do something like:
+
+```{r, echo=TRUE}
+set.seed(3000)
+tictoc::tic()
+tune_simple_tree <- tune_grid(simple_tree, 
+                       rec_yoself, 
+                       train_cv, 
+                       grid = 10, 
+                       metrics = metric_set(rmse, rsq, huber_loss))
+tictoc::toc()
+
+
+
+```
+
+
+4. Show the best estimates for each of the three performance metrics and the tuning parameter values associated with each.
+```{r}
+
+tune_simple_tree %>% 
+  collect_metrics()
+
+show_best(tune_simple_tree, "rmse")
+show_best(tune_simple_tree, "rsq")
+show_best(tune_simple_tree, "huber_loss")
+
+```
+
+## Bagged Tree
+
+1. Create a `parsnip` bagged tree model using`{baguette}` 
+* specify 10 bootstrap resamples (only to keep run-time down), and 
+* tune on `cost_complexity` and `min_n`
+
+```{r}
+
+library(baguette)
+okay_trees <- bag_tree() %>% 
+  set_mode("regression") %>% 
+  set_args(cost_complexity = tune(), min_n = tune()) %>% 
+  set_engine("rpart", times = 10) 
+
+
+```
+
+2. Create a `workflow` object that combines your `recipe` and your bagged tree model specification.
+```{r}
+
+bag_flow <- tuned_workflow %>% 
+  update_model(okay_trees)  
+  
+
+```
+
+3. Tune your model with `tune_grid`
+* Use `grid = 10` to choose 10 grid points automatically
+* In the `metrics` argument, please include `rmse`, `rsq`, and `huber_loss`
+* In the `control` argument, please include `extract = function(x) extract_model(x)` to extract the model from each fit
+* `{baguette}` is optimized to run in parallel with the `{future}` package. Consider using `{future}` to speed up processing time (see the class slides)
+* Record the time it takes to run
+
+#### **Question: Before you run the code, how many trees will this function execute?**
+
+#### We expect the function to execute (10 folds x 10 models x 10 grids) 1000 trees. 
+
+```{r}
+set.seed(3000)
+library(future)
+plan(multisession)
+tictoc::tic()
+tune_okay_trees <- tune_grid(bag_flow, 
+                       train_cv, 
+                       grid = 10, 
+                       metrics = metric_set(rmse, rsq, huber_loss),
+                       control = control_resamples(verbose = TRUE, 
+                               save_pred = TRUE, 
+                               extract = function(x) extract_model(x)
+)
+)
+tictoc::toc()
+plan(sequential)
+
+
+```
+
+4. Show the single best estimates for each of the three performance metrics and the tuning parameter values associated with each.
+
+```{r}
+
+select_best(tune_okay_trees, "rmse")
+select_best(tune_okay_trees, "rsq")
+select_best(tune_okay_trees, "huber_loss")
+
+```
+
+5. Run the `bag_roots` function below. Apply this function to the extracted bagged tree models from the previous step. This will output the feature at the root node for each of the decision trees fit. 
+
+```{r, echo=TRUE}
+
+bag_roots <- function(x){
+  x %>% 
+  select(.extracts) %>% 
+  unnest(cols = c(.extracts)) %>% 
+  mutate(models = map(.extracts,
+                  ~.x$model_df)) %>% 
+  select(-.extracts) %>% 
+  unnest(cols = c(models)) %>% 
+  mutate(root = map_chr(model,
+                     ~as.character(.x$fit$frame[1, 1]))) %>%
+  select(root)  
+}
+
+t <- bag_roots(tune_okay_trees)
+```
+
+6. Produce a plot of the frequency of features at the root node of the trees in your bagged model.
+
+
+```{r}
+
+bag_roots(tune_okay_trees) %>% 
+  ggplot(mapping = aes(x = fct_rev(fct_infreq(root)))) + 
+  geom_bar() + 
+  coord_flip() + 
+  labs(x = "root", y = "count")
+
+```
+
+## Random Forest
+
+1. Create a `parsnip` random forest model using `{ranger}`
+* use the `importance = "permutation"` argument to run variable importance
+* specify 1,000 trees, but keep the other default tuning parameters
+
+```{r}
+
+cores <- parallel::detectCores()
+
+model_of_forests <- rand_forest() %>%
+  set_engine("ranger",
+             num.threads = cores, #argument from {ranger}
+             importance = "permutation", #argument from {ranger}
+             verbose = TRUE) %>% #argument from {ranger}
+  set_mode("regression") %>% 
+  set_args(mtry = tune(),
+        trees = 1000,
+        min_n = tune())
+
+translate(model_of_forests)
+
+      
+  
+```
+
+2. Create a `workflow` object that combines your `recipe` and your random forest model specification.
+```{r}
+
+forest_flo <- bag_flow %>% 
+  update_model(model_of_forests)
+
+# forest_flozo <- workflow() %>% 
+#   add_recipe(rec_yoself) %>% 
+#   add_model(model_of_forests) #didn't
+
+
+
+```
+
+3. Fit your model 
+* In the `metrics` argument, please include `rmse`, `rsq`, and `huber_loss`
+* In the `control` argument, please include `extract = function(x) x` to extract the workflow from each fit
+* Record the time it takes to run
+
+```{r}
+set.seed(3000)
+plan(multisession)
+tictoc::tic()
+tune_random_trees <- tune_grid(forest_flo, 
+                       train_cv, 
+                       grid = 10,
+                       metrics = metric_set(rmse, rsq, huber_loss),
+                       control = control_resamples(verbose = TRUE, 
+                               save_pred = TRUE, 
+                               extract = function(x) x))
+
+tictoc::toc()
+plan(sequential)
+
+```
+
+4. Show the single best estimates for each of the three performance metrics.
+
+```{r}
+
+select_best(tune_random_trees, "rmse")
+select_best(tune_random_trees, "rsq")
+select_best(tune_random_trees, "huber_loss")
+
+```
+
+5. Run the two functions in the code chunk below. Then apply the `rf_roots` function to the results of your random forest model to output the feature at the root node for each of the decision trees fit in your random forest model. 
+
+```{r, echo=TRUE}
+
+rf_tree_roots <- function(x){
+  map_chr(1:1000, 
+           ~ranger::treeInfo(x, tree = .)[1, "splitvarName"])
+}
+
+rf_roots <- function(x){
+  x %>% 
+  select(.extracts) %>% 
+  unnest(cols = c(.extracts)) %>% 
+  mutate(fit = map(.extracts,
+                   ~.x$fit$fit$fit),
+         oob_rmse = map_dbl(fit,
+                         ~sqrt(.x$prediction.error)),
+         roots = map(fit, 
+                        ~rf_tree_roots(.))
+         ) %>% 
+  select(roots) %>% 
+  unnest(cols = c(roots))
+}
+
+rf_root_node <- rf_roots(tune_random_trees)
+  
+```
+
+6. Produce a plot of the frequency of features at the root node of the trees in your bagged model.
+
+```{r}
+
+rf_root_node %>% 
+  ggplot(mapping = aes(x = fct_rev(fct_infreq(roots)))) + 
+  geom_bar() + 
+  coord_flip() + 
+  labs(x = "roots", y = "count")
+
+```
+
+7. Please explain why the bagged tree root node figure and the random forest root node figure are different.
+
+Answer: Bagged tree models split at the same root variable (most important predictor), whereas random forest models split at random root variables. So although both use bootstrap aggregation (averages all the models), they are starting at different nodes.
+
+
+8. Apply the `fit` function to your random forest `workflow` object and your **full** training data.
+In class we talked about the idea that bagged tree and random forest models use resampling, and one *could* use the OOB prediction error provided by the models to estimate model performance.
+
+* Record the time it takes to run
+* Extract the oob prediction error from your fitted object. If you print your fitted object, you will see a value for *OOB prediction error (MSE)*. You can take the `sqrt()` of this value to get the *rmse*. Or you can extract it by running: `sqrt(fit-object-name-here$fit$fit$fit$prediction.error)`.
+* How does OOB *rmse* here compare to the mean *rmse* estimate from your 10-fold CV random forest? How might 10-fold CV influence bias-variance?
+
+Answer: The OOB rmse is much larger than the mean rmse from the 10-fold CV random forest. Cross-validation helps with less bias compared to OOB because of sampling with replacement. Cross-validation has more variability compared to OOB, but is more useful for small datasets since OOB relies on replacement from the sample. 
+
+
+```{r}
+tictoc::tic()
+obb_fit <- fit(forest_flo, data = d_train)
+tictoc::toc()
+
+obb_fit
+
+#extract object
+obb_pred_error <- obb_fit$fit$fit$fit$prediction.error
+
+#square root
+sqrt(obb_pred_error) #132.65
+
+```
+
+## Compare Performance 
+
+Consider the four models you fit: (a) decision tree, (b) bagged tree, (c) random forest fit on resamples, and (d) random forest fit on the training data. Which model would you use for your final fit? Please consider the performance metrics as well as the run time, and briefly explain your decision. 
+
+```{r}
+#dt rmse
+show_best(tune_simple_tree, "rmse", n = 1) #116.67
+#subset run time - ~69sec
+
+#bt rmse
+show_best(tune_okay_trees, "rmse", n = 1) #109.94
+#subset run time - 175.75sec
+
+#rf rmse
+show_best(tune_random_trees, "rmse", n = 1) #108.38
+#subset run time - ~69sec
+
+#rf obb rmse
+sqrt(obb_pred_error) #~132.65
+#subset run time - 1sec
+
+
+```
+
+
+
+```{r}
+train_best <- select_best(tune_random_trees, metric = "rmse")
+
+train_wf_final <- finalize_workflow(
+forest_flo,
+train_best
+)
+
+tictoc::tic()
+set.seed(3000)
+train_res_final <- last_fit(train_wf_final,
+split = d_split)
+tictoc::toc()
+
+pluck(train_res_final$.metrics[[1]], 3)
+
+
+train_res_final %>% 
+  collect_metrics()
+
+
+############################
+
+test <- read_csv(here("data", "test.csv"),
+                 col_types = cols(.default = col_guess(), 
+                                  calc_admn_cd = col_character()))
+
+#join with frl
+test <- left_join(test, frl)
+test1 <- left_join(test, ethnicities)
+
+#workflow
+fit_workflow <- fit(train_wf_final, d)
+
+#use model to make predictions for test dataset
+preds_final <- predict(fit_workflow, test1)
+
+preds_final
+str(preds_final)
+
+preds_final
+
+pred_frame <- tibble(Predicted = preds_final$.pred)
+
+#create prediction file
+# write_csv(pred_frame, "fit2.csv")
+
+
+```
+
