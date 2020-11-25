@@ -185,8 +185,9 @@ tuned_workflow <- workflow() %>%
 * Use `grid = 10` to choose 10 grid points automatically
 * In the `metrics` argument, please include `rmse`, `rsq`, and `huber_loss`
 * Record the time it takes to run. You could use `{tictoc}`, or you could do something like:
-```{r, echo=TRUE, eval=FALSE}
 
+```{r, echo=TRUE}
+set.seed(3000)
 tictoc::tic()
 tune_simple_tree <- tune_grid(simple_tree, 
                        rec_yoself, 
@@ -250,7 +251,7 @@ bag_flow <- tuned_workflow %>%
 #### We expect the function to execute (10 folds x 10 models x 10 grids) 1000 trees. 
 
 ```{r}
-
+set.seed(3000)
 library(future)
 plan(multisession)
 tictoc::tic()
@@ -358,8 +359,7 @@ forest_flo <- bag_flow %>%
 * Record the time it takes to run
 
 ```{r}
-
-library(future)
+set.seed(3000)
 plan(multisession)
 tictoc::tic()
 tune_random_trees <- tune_grid(forest_flo, 
@@ -429,7 +429,7 @@ rf_root_node %>%
 
 ```{r}
 # not sure if this is correct, but its in my notes
-#Bagged tree models split at the same root variable (most important predictor)
+#Bagged tree models split at the same root variable (most important predictor) - both use bootstrap aggregation (averages all the models)
 #Random forest models split at random root variables.
 
 
@@ -442,7 +442,20 @@ In class we talked about the idea that bagged tree and random forest models use 
 * Extract the oob prediction error from your fitted object. If you print your fitted object, you will see a value for *OOB prediction error (MSE)*. You can take the `sqrt()` of this value to get the *rmse*. Or you can extract it by running: `sqrt(fit-object-name-here$fit$fit$fit$prediction.error)`.
 * How does OOB *rmse* here compare to the mean *rmse* estimate from your 10-fold CV random forest? How might 10-fold CV influence bias-variance?
 
+
+
 ```{r}
+tictoc::tic()
+obb_fit <- fit(forest_flo, data = d_train)
+tictoc::toc()
+
+obb_fit
+
+#extract object
+obb_pred_error <- obb_fit$fit$fit$fit$prediction.error
+
+#square root
+sqrt(obb_pred_error) #132.65
 
 ```
 
@@ -450,6 +463,25 @@ In class we talked about the idea that bagged tree and random forest models use 
 
 Consider the four models you fit: (a) decision tree, (b) bagged tree, (c) random forest fit on resamples, and (d) random forest fit on the training data. Which model would you use for your final fit? Please consider the performance metrics as well as the run time, and briefly explain your decision. 
 
+```{r}
+#dt rmse
+show_best(tune_simple_tree, "rmse", n = 1) #116.67
+#subset run time - ~69sec
+
+#bt rmse
+show_best(tune_okay_trees, "rmse", n = 1) #109.94
+#subset run time - 175.75sec
+
+#rf rmse
+show_best(tune_random_trees, "rmse", n = 1) #108.38
+#subset run time - ~69sec
+
+#rf obb rmse
+sqrt(obb_pred_error) #132.65
+#subset run time - 1sec
+
+
+```
 
 
 
