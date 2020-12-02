@@ -205,3 +205,20 @@ saveRDS(train_res_final, "prelimfit2_finalfit.Rds")
 
 
 
+###############################
+# interactions
+
+# teachers x econ_dsvntg
+# ethnic_cd --> binary to white/not white
+# ethnic_cd x fl_prop
+# ethnic_cd x rl_prop
+# try with and without tst_dt
+# ind_ed_fg x p_american_indian_alaska_native
+# sp_ed_fg x econ_dsvntg (visualize this interaction)
+# visualize splines (geom smooth), try splines with random forests
+# try tuning splines
+
+
+# step_BoxCox(all_numeric(), -all_outcomes(), -has_role("id vars"))
+# step_interact(terms = ~ starts_with("ethnic"):ends_with("prop"))
+
