@@ -34,7 +34,7 @@ stu_counts <- import("achievement-gaps-geocoded.csv",
   mutate(ncessch = as.double(ncessch))
 
 
-or_schools <- readxl::read_xlsx(here("data", "fallmembershipreport_20192020.xlsx"),
+or_schools <- readxl::read_xlsx("fallmembershipreport_20192020.xlsx",
                                 sheet = 4) 
 
 ethnicities <- or_schools %>% 
