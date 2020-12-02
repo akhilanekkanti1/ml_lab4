@@ -51,13 +51,11 @@ If you have accessed outside data to help increase the performance of your model
 train <- read_csv(here("data","train.csv"),
                        col_types = cols(.default = col_guess(), 
                                         calc_admn_cd = col_character()))  %>% 
-  select(-classification) %>% 
-  sample_frac(.01)
+  select(-score) %>% 
+  mutate(tst_dt = lubridate::mdy_hms(tst_dt))
 
 or_schools <- readxl::read_xlsx(here("data", "fallmembershipreport_20192020.xlsx"),
                                  sheet = 4) 
-
-
 ethnicities <- or_schools %>% 
   select(attnd_schl_inst_id = `Attending School ID`,
          sch_name = `School Name`,
@@ -77,12 +75,13 @@ frl <- import(here("data","frl.csv"),
               setclass = "tbl_df")  %>% 
   janitor::clean_names()  %>% 
   filter(st == "OR")  %>%
-  select(ncessch, lunch_program, student_count)  %>% 
+  #select(ncessch, lunch_program, student_count)  %>% 
   mutate(student_count = replace_na(student_count, 0))  %>% 
   pivot_wider(names_from = lunch_program,
               values_from = student_count)  %>% 
   janitor::clean_names()  %>% 
   mutate(ncessch = as.double(ncessch))
+
 
 
 stu_counts <- import(here("data","achievement-gaps-geocoded.csv"),
@@ -101,7 +100,7 @@ frl <- frl1 %>%
          rl_prop = reduced_price_lunch_qualified/n) %>%
   select(ncessch,fl_prop, rl_prop, teachers)
 
-
+#train_eth <- left_join(train, frl)
 train_frl <- left_join(train, frl)
 d <- left_join(train_frl, ethnicities)
 
@@ -109,6 +108,39 @@ d <- d %>%
   sample_frac(.10)
 
 ```
+
+```{r}
+
+train %>% #not unique
+  count(ncessch) %>% 
+  filter(n >1)
+
+train %>% #not unique
+  count(ncessch, attnd_schl_inst_id, attnd_dist_inst_id) %>% 
+  filter(n >1)
+
+train_frl %>% #not unique
+     count(ncessch) %>%
+     filter(n > 1)
+
+train_eth %>% #not unique
+     count(ncessch) %>%
+     filter(n > 1)
+
+staff %>% #unique key
+  count(ncessch) %>% 
+  filter(n>1)
+
+frl %>% # not unique
+  count(ncessch) %>% 
+  filter(n>1)
+
+stu_counts %>% #unique key
+  count(ncessch) %>% 
+  filter(n > 1)
+
+```
+
 
 ## Split and Resample
 
