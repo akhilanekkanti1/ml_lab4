@@ -138,6 +138,9 @@ tictoc::tic()
 tune_xglr <- tune_grid(xglr_flo, train_cv, grid = xg_grd, control = tune::control_resamples(verbose = TRUE, save_pred = TRUE))
 tictoc::toc()
 
+#2436.44 sec elapsed
+
+
 #finalize lr with best RMSE and tune tree depth and min n
 
 tune_xgtrn <- xg_tunelr %>% 
