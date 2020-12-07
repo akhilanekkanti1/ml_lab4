@@ -36,8 +36,10 @@ stu_counts <- import("data/achievement-gaps-geocoded.csv",
 or_schools <- readxl::read_xlsx("data/fallmembershipreport_20192020.xlsx",
                                 sheet = 4) 
 
+#tidy ethnicity data
 ethnicities <- or_schools %>% 
   select(attnd_schl_inst_id = `Attending School ID`,
+         attnd_dist_inst_id = `Attending District Institution ID`, #included this to join by district along with school id
          sch_name = `School Name`,
          contains("%")) %>% 
   janitor::clean_names()
@@ -127,8 +129,8 @@ knn_flo <- workflow() %>%
 set.seed(3000)
 
 #grid
-knn_par <- parameters(neighbors(), weight_func(), dist_power())
-knn_grd <- grid_max_entropy(knn_par, size = 50)
+knn_par <- parameters(neighbors(range = (c(10, 75))), weight_func(), dist_power()) #testing with smaller range due to computation
+knn_grd <- grid_max_entropy(knn_par, size = 30) #testing with smaller size due to computation
 
 
 all_cores <- parallel::detectCores(logical = FALSE)

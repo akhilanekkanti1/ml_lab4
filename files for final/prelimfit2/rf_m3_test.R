@@ -36,9 +36,9 @@ stu_counts <- import("data/achievement-gaps-geocoded.csv",
 
 or_schools <- readxl::read_xlsx("data/fallmembershipreport_20192020.xlsx",
                                 sheet = 4) 
-
 ethnicities <- or_schools %>% 
   select(attnd_schl_inst_id = `Attending School ID`,
+         attnd_dist_inst_id = `Attending District Institution ID`, #included this to join by district along with school id
          sch_name = `School Name`,
          contains("%")) %>% 
   janitor::clean_names()
