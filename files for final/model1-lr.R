@@ -34,8 +34,10 @@ stu_counts <- import("data/achievement-gaps-geocoded.csv",
 or_schools <- readxl::read_xlsx("data/fallmembershipreport_20192020.xlsx",
                                 sheet = 4) 
 
+#tidy ethnicity data
 ethnicities <- or_schools %>% 
   select(attnd_schl_inst_id = `Attending School ID`,
+         attnd_dist_inst_id = `Attending District Institution ID`, #included this to join by district along with school id
          sch_name = `School Name`,
          contains("%")) %>% 
   janitor::clean_names()
@@ -61,6 +63,15 @@ d <- train %>%
   left_join(frl_stu) %>% 
   left_join(staff) %>% 
   left_join(ethnicities) #%>% sample_frac(.01)
+
+d <- train %>% 
+  left_join(ethnicities) %>% 
+  left_join(frl_stu) %>% 
+  left_join(staff)
+
+unqi_d <- d %>% 
+  count(id) %>% 
+  arrange(desc(n))
 
 ######################### split
 
@@ -146,13 +157,18 @@ test_preds
 #copied from st-test
 test <- read_csv("data/test.csv",
                  col_types = cols(.default = col_guess(), 
-                                  calc_admn_cd = col_character()))
+                                  calc_admn_cd = col_character())) %>% 
+  select(-classification)
 
 #joins - edited
 test1 <- test %>% 
   left_join(frl_stu) %>% 
   left_join(staff) %>% 
   left_join(ethnicities)
+
+unqi_test <- test1 %>% 
+  count(id) %>% 
+  arrange(n)
 
 #If you want to use your model to predict the response for new observations, you need to use the fit() function on your workflow and the dataset that you want to fit the final model on (e.g. the complete training + testing dataset). 
 
@@ -166,6 +182,10 @@ preds_final <- predict(fit_workflow, test1)
 
 ######################
 pred_frame <- tibble(Id = test1$id, Predicted = preds_final$.pred)
+
+unqi_pred <- pred_frame %>% 
+  count(Id) %>% 
+  arrange(desc(n))
 
 write_csv(pred_frame, "lrfit-m1-editrecipe.csv") #edited
 
