@@ -1,0 +1,14 @@
+#!/bin/bash
+
+#SBATCH --partition=short        ### Partition see https://hpcrcf.atlassian.net/wiki/spaces/TCP/pages/7285967/Partition+List
+#SBATCH --job-name=rf_m3		 ### Job Name
+#SBATCH --output=rf_m3.out        ### File in which to store job output
+#SBATCH --error=rf_m3.err         ### File in which to store job error messages
+#SBATCH --time=0-12:00:00        ### Wall clock time limit in Days-HH:MM:SS
+#SBATCH --nodes=1                ### Number of nodes needed for the job
+#SBATCH --ntasks-per-node=1      ### Number of tasks to be launched per Node
+#SBATCH --cpus-per-task=8				 ### Number of cores for each task (if parallel computation can be utilized)
+#SBATCH --mem-per-cpu=16GB       ### RAM (memory) per CPU
+#SBATCH --account=edld654        ### Account used for job submission
+ 
+R CMD BATCH --no-save --no-restore rf_m3_test.R   # run your script

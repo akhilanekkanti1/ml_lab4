@@ -1,0 +1,678 @@
+
+R version 3.6.0 (2019-04-26) -- "Planting of a Tree"
+Copyright (C) 2019 The R Foundation for Statistical Computing
+Platform: x86_64-redhat-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> library(tidyverse)
+── Attaching packages ─────────────────────────────────────── tidyverse 1.3.0 ──
+✔ ggplot2 3.3.2     ✔ purrr   0.3.4
+✔ tibble  3.0.4     ✔ dplyr   1.0.2
+✔ tidyr   1.1.2     ✔ stringr 1.4.0
+✔ readr   1.4.0     ✔ forcats 0.5.0
+── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+✖ dplyr::filter() masks stats::filter()
+✖ dplyr::lag()    masks stats::lag()
+> library(tidymodels)
+── Attaching packages ────────────────────────────────────── tidymodels 0.1.2 ──
+✔ broom     0.7.2      ✔ recipes   0.1.15
+✔ dials     0.0.9      ✔ rsample   0.0.8 
+✔ infer     0.5.3      ✔ tune      0.1.2 
+✔ modeldata 0.1.0      ✔ workflows 0.2.1 
+✔ parsnip   0.1.4      ✔ yardstick 0.0.7 
+── Conflicts ───────────────────────────────────────── tidymodels_conflicts() ──
+✖ scales::discard() masks purrr::discard()
+✖ dplyr::filter()   masks stats::filter()
+✖ recipes::fixed()  masks stringr::fixed()
+✖ dplyr::lag()      masks stats::lag()
+✖ yardstick::spec() masks readr::spec()
+✖ recipes::step()   masks stats::step()
+> library(baguette)
+> library(future)
+> library(rio)
+> library(vip)
+
+Attaching package: ‘vip’
+
+The following object is masked from ‘package:utils’:
+
+    vi
+
+> library(ranger)
+> 
+> 
+> ###################data
+> 
+> train <- read_csv("data/train.csv",
++                   col_types = cols(.default = col_guess(), 
++                                    calc_admn_cd = col_character()))  %>% 
++   select(-classification) 
+> 
+> 
+> #edited (could export and then import that csv if needed)
+> frl <- import("https://nces.ed.gov/ccd/Data/zip/ccd_sch_033_1718_l_1a_083118.zip",
++               setclass = "tbl_df")  %>% 
++   janitor::clean_names()  %>% 
++   filter(st == "OR")  %>%
++   select(ncessch, lunch_program, student_count)  %>% 
++   mutate(student_count = replace_na(student_count, 0))  %>% 
++   pivot_wider(names_from = lunch_program,
++               values_from = student_count)  %>% 
++   janitor::clean_names()  %>% 
++   mutate(ncessch = as.double(ncessch))
+Warning message:
+In parse_zip(file) :
+  Zip archive contains multiple files. Attempting first file.
+> 
+> stu_counts <- import("data/achievement-gaps-geocoded.csv",
++                      setclass = "tbl_df")  %>% 
++   filter(state == "OR" & year == 1718)  %>% 
++   count(ncessch, wt = n)  %>% 
++   mutate(ncessch = as.double(ncessch))
+> 
+> 
+> or_schools <- readxl::read_xlsx("data/fallmembershipreport_20192020.xlsx",
++                                 sheet = 4) 
+> ethnicities <- or_schools %>% 
++   select(attnd_schl_inst_id = `Attending School ID`,
++          attnd_dist_inst_id = `Attending District Institution ID`, #included this to join by district along with school id
++          sch_name = `School Name`,
++          contains("%")) %>% 
++   janitor::clean_names()
+> names(ethnicities) <- gsub("x2019_20_percent", "p", names(ethnicities))
+> 
+> staff <- import("data/staff.csv",
++                 setclass = "tbl_df") %>% 
++   janitor::clean_names() %>%
++   filter(st == "OR") %>%
++   select(ncessch,schid,teachers) %>%
++   mutate(ncessch = as.double(ncessch))
+> 
+> 
+> 
+> frl_stu <- left_join(frl, stu_counts)
+Joining, by = "ncessch"
+> 
+> frl_stu <- frl_stu %>% mutate(fl_prop = free_lunch_qualified/n,
++                               rl_prop = reduced_price_lunch_qualified/n) %>%
++   select(ncessch,fl_prop, rl_prop)
+> 
+> 
+> d <- train %>% 
++   left_join(frl_stu) %>% 
++   left_join(staff) %>% 
++   left_join(ethnicities)
+Joining, by = "ncessch"
+Joining, by = "ncessch"
+Joining, by = c("attnd_dist_inst_id", "attnd_schl_inst_id")
+> 
+> ######################### split
+> 
+> d_split <- initial_split(d, strata = "score")
+> 
+> d_train <- training(d_split)
+> d_test  <- testing(d_split)
+> train_cv <- vfold_cv(d_train, strata = "score")
+> 
+> ######################## recipe
+> 
+> rec_yoself <- recipe(score ~ .,data = d_train) %>%
++   step_mutate(tst_dt = as.numeric(lubridate::mdy_hms(tst_dt))) %>% #had  to add as.numeric to recipe to make xgboost model run
++   update_role(contains("id"), ncessch, new_role = "id vars") %>%
++   step_unknown(all_nominal()) %>% 
++   step_novel(all_nominal()) %>% 
++   step_dummy(all_nominal()) %>% 
++   step_nzv(all_predictors()) %>%
++   #step_mutate(z_rlprop = log(rl_prop),
++   #           z_flprop = log(fl_prop)) %>% 
++   #step_rm(fl_prop, rl_prop) %>% #remove potentially redundant variables
++   step_normalize(all_numeric(), -all_outcomes(), -has_role("id vars")) %>%
++   step_medianimpute(all_numeric(), -all_outcomes(), -has_role("id vars")) %>%  
++   step_interact(terms = ~lat:lon) %>% 
++   step_nzv(all_predictors()) #added due to error in xg boost about constant variables with 0sd
+> 
+> 
+> ##########################
+> 
+> #cores <- parallel::detectCores() ###not sure if we need to take this out and hard code num.threads below for talapas
+> 
+> model_of_forests <- rand_forest() %>%
++   set_engine("ranger",
++              num.threads = 8, #hardcode based on what we request from talapas
++              importance = "permutation", #argument from {ranger}
++              verbose = TRUE) %>% #argument from {ranger}
++   set_mode("regression") %>% 
++   set_args(mtry = tune(),
++            trees = 1000,
++            min_n = tune())
+> 
+> 
+> forest_flo <- workflow() %>%
++   add_recipe(rec_yoself) %>%
++   add_model(model_of_forests)
+> 
+> ######################
+> 
+> set.seed(3000)
+> plan(multisession)
+> tictoc::tic()
+> tune_random_trees <- tune_grid(forest_flo, 
++                                train_cv, 
++                                grid = 10,
++                                metrics = metric_set(rmse, rsq, huber_loss),
++                                control = control_resamples(verbose = TRUE, 
++                                                            save_pred = TRUE, 
++                                                            extract = function(x) x))
+i Creating pre-processing data to finalize unknown parameter: mtry
+
+Attaching package: ‘rlang’
+
+The following objects are masked from ‘package:purrr’:
+
+    %@%, as_function, flatten, flatten_chr, flatten_dbl, flatten_int,
+    flatten_lgl, flatten_raw, invoke, list_along, modify, prepend,
+    splice
+
+
+Attaching package: ‘vctrs’
+
+The following object is masked from ‘package:dplyr’:
+
+    data_frame
+
+The following object is masked from ‘package:tibble’:
+
+    data_frame
+
+i Fold01: preprocessor 1/1
+✓ Fold01: preprocessor 1/1
+i Fold01: preprocessor 1/1, model 1/10
+✓ Fold01: preprocessor 1/1, model 1/10
+i Fold01: preprocessor 1/1, model 1/10 (predictions)
+! Fold01: preprocessor 1/1, model 1/10 (predictions): There are new levels in a fa...
+i Fold01: preprocessor 1/1, model 2/10
+✓ Fold01: preprocessor 1/1, model 2/10
+i Fold01: preprocessor 1/1, model 2/10 (predictions)
+! Fold01: preprocessor 1/1, model 2/10 (predictions): There are new levels in a fa...
+i Fold01: preprocessor 1/1, model 3/10
+✓ Fold01: preprocessor 1/1, model 3/10
+i Fold01: preprocessor 1/1, model 3/10 (predictions)
+! Fold01: preprocessor 1/1, model 3/10 (predictions): There are new levels in a fa...
+i Fold01: preprocessor 1/1, model 4/10
+✓ Fold01: preprocessor 1/1, model 4/10
+i Fold01: preprocessor 1/1, model 4/10 (predictions)
+! Fold01: preprocessor 1/1, model 4/10 (predictions): There are new levels in a fa...
+i Fold01: preprocessor 1/1, model 5/10
+✓ Fold01: preprocessor 1/1, model 5/10
+i Fold01: preprocessor 1/1, model 5/10 (predictions)
+! Fold01: preprocessor 1/1, model 5/10 (predictions): There are new levels in a fa...
+i Fold01: preprocessor 1/1, model 6/10
+✓ Fold01: preprocessor 1/1, model 6/10
+i Fold01: preprocessor 1/1, model 6/10 (predictions)
+! Fold01: preprocessor 1/1, model 6/10 (predictions): There are new levels in a fa...
+i Fold01: preprocessor 1/1, model 7/10
+✓ Fold01: preprocessor 1/1, model 7/10
+i Fold01: preprocessor 1/1, model 7/10 (predictions)
+! Fold01: preprocessor 1/1, model 7/10 (predictions): There are new levels in a fa...
+i Fold01: preprocessor 1/1, model 8/10
+✓ Fold01: preprocessor 1/1, model 8/10
+i Fold01: preprocessor 1/1, model 8/10 (predictions)
+! Fold01: preprocessor 1/1, model 8/10 (predictions): There are new levels in a fa...
+i Fold01: preprocessor 1/1, model 9/10
+✓ Fold01: preprocessor 1/1, model 9/10
+i Fold01: preprocessor 1/1, model 9/10 (predictions)
+! Fold01: preprocessor 1/1, model 9/10 (predictions): There are new levels in a fa...
+i Fold01: preprocessor 1/1, model 10/10
+✓ Fold01: preprocessor 1/1, model 10/10
+i Fold01: preprocessor 1/1, model 10/10 (predictions)
+! Fold01: preprocessor 1/1, model 10/10 (predictions): There are new levels in a f...
+i Fold02: preprocessor 1/1
+✓ Fold02: preprocessor 1/1
+i Fold02: preprocessor 1/1, model 1/10
+✓ Fold02: preprocessor 1/1, model 1/10
+i Fold02: preprocessor 1/1, model 1/10 (predictions)
+! Fold02: preprocessor 1/1, model 1/10 (predictions): There are new levels in a fa...
+i Fold02: preprocessor 1/1, model 2/10
+✓ Fold02: preprocessor 1/1, model 2/10
+i Fold02: preprocessor 1/1, model 2/10 (predictions)
+! Fold02: preprocessor 1/1, model 2/10 (predictions): There are new levels in a fa...
+i Fold02: preprocessor 1/1, model 3/10
+✓ Fold02: preprocessor 1/1, model 3/10
+i Fold02: preprocessor 1/1, model 3/10 (predictions)
+! Fold02: preprocessor 1/1, model 3/10 (predictions): There are new levels in a fa...
+i Fold02: preprocessor 1/1, model 4/10
+✓ Fold02: preprocessor 1/1, model 4/10
+i Fold02: preprocessor 1/1, model 4/10 (predictions)
+! Fold02: preprocessor 1/1, model 4/10 (predictions): There are new levels in a fa...
+i Fold02: preprocessor 1/1, model 5/10
+✓ Fold02: preprocessor 1/1, model 5/10
+i Fold02: preprocessor 1/1, model 5/10 (predictions)
+! Fold02: preprocessor 1/1, model 5/10 (predictions): There are new levels in a fa...
+i Fold02: preprocessor 1/1, model 6/10
+✓ Fold02: preprocessor 1/1, model 6/10
+i Fold02: preprocessor 1/1, model 6/10 (predictions)
+! Fold02: preprocessor 1/1, model 6/10 (predictions): There are new levels in a fa...
+i Fold02: preprocessor 1/1, model 7/10
+✓ Fold02: preprocessor 1/1, model 7/10
+i Fold02: preprocessor 1/1, model 7/10 (predictions)
+! Fold02: preprocessor 1/1, model 7/10 (predictions): There are new levels in a fa...
+i Fold02: preprocessor 1/1, model 8/10
+✓ Fold02: preprocessor 1/1, model 8/10
+i Fold02: preprocessor 1/1, model 8/10 (predictions)
+! Fold02: preprocessor 1/1, model 8/10 (predictions): There are new levels in a fa...
+i Fold02: preprocessor 1/1, model 9/10
+✓ Fold02: preprocessor 1/1, model 9/10
+i Fold02: preprocessor 1/1, model 9/10 (predictions)
+! Fold02: preprocessor 1/1, model 9/10 (predictions): There are new levels in a fa...
+i Fold02: preprocessor 1/1, model 10/10
+✓ Fold02: preprocessor 1/1, model 10/10
+i Fold02: preprocessor 1/1, model 10/10 (predictions)
+! Fold02: preprocessor 1/1, model 10/10 (predictions): There are new levels in a f...
+i Fold03: preprocessor 1/1
+✓ Fold03: preprocessor 1/1
+i Fold03: preprocessor 1/1, model 1/10
+✓ Fold03: preprocessor 1/1, model 1/10
+i Fold03: preprocessor 1/1, model 1/10 (predictions)
+! Fold03: preprocessor 1/1, model 1/10 (predictions): There are new levels in a fa...
+i Fold03: preprocessor 1/1, model 2/10
+✓ Fold03: preprocessor 1/1, model 2/10
+i Fold03: preprocessor 1/1, model 2/10 (predictions)
+! Fold03: preprocessor 1/1, model 2/10 (predictions): There are new levels in a fa...
+i Fold03: preprocessor 1/1, model 3/10
+✓ Fold03: preprocessor 1/1, model 3/10
+i Fold03: preprocessor 1/1, model 3/10 (predictions)
+! Fold03: preprocessor 1/1, model 3/10 (predictions): There are new levels in a fa...
+i Fold03: preprocessor 1/1, model 4/10
+✓ Fold03: preprocessor 1/1, model 4/10
+i Fold03: preprocessor 1/1, model 4/10 (predictions)
+! Fold03: preprocessor 1/1, model 4/10 (predictions): There are new levels in a fa...
+i Fold03: preprocessor 1/1, model 5/10
+✓ Fold03: preprocessor 1/1, model 5/10
+i Fold03: preprocessor 1/1, model 5/10 (predictions)
+! Fold03: preprocessor 1/1, model 5/10 (predictions): There are new levels in a fa...
+i Fold03: preprocessor 1/1, model 6/10
+✓ Fold03: preprocessor 1/1, model 6/10
+i Fold03: preprocessor 1/1, model 6/10 (predictions)
+! Fold03: preprocessor 1/1, model 6/10 (predictions): There are new levels in a fa...
+i Fold03: preprocessor 1/1, model 7/10
+✓ Fold03: preprocessor 1/1, model 7/10
+i Fold03: preprocessor 1/1, model 7/10 (predictions)
+! Fold03: preprocessor 1/1, model 7/10 (predictions): There are new levels in a fa...
+i Fold03: preprocessor 1/1, model 8/10
+✓ Fold03: preprocessor 1/1, model 8/10
+i Fold03: preprocessor 1/1, model 8/10 (predictions)
+! Fold03: preprocessor 1/1, model 8/10 (predictions): There are new levels in a fa...
+i Fold03: preprocessor 1/1, model 9/10
+✓ Fold03: preprocessor 1/1, model 9/10
+i Fold03: preprocessor 1/1, model 9/10 (predictions)
+! Fold03: preprocessor 1/1, model 9/10 (predictions): There are new levels in a fa...
+i Fold03: preprocessor 1/1, model 10/10
+✓ Fold03: preprocessor 1/1, model 10/10
+i Fold03: preprocessor 1/1, model 10/10 (predictions)
+! Fold03: preprocessor 1/1, model 10/10 (predictions): There are new levels in a f...
+i Fold04: preprocessor 1/1
+✓ Fold04: preprocessor 1/1
+i Fold04: preprocessor 1/1, model 1/10
+✓ Fold04: preprocessor 1/1, model 1/10
+i Fold04: preprocessor 1/1, model 1/10 (predictions)
+i Fold04: preprocessor 1/1, model 2/10
+✓ Fold04: preprocessor 1/1, model 2/10
+i Fold04: preprocessor 1/1, model 2/10 (predictions)
+i Fold04: preprocessor 1/1, model 3/10
+✓ Fold04: preprocessor 1/1, model 3/10
+i Fold04: preprocessor 1/1, model 3/10 (predictions)
+i Fold04: preprocessor 1/1, model 4/10
+✓ Fold04: preprocessor 1/1, model 4/10
+i Fold04: preprocessor 1/1, model 4/10 (predictions)
+i Fold04: preprocessor 1/1, model 5/10
+✓ Fold04: preprocessor 1/1, model 5/10
+i Fold04: preprocessor 1/1, model 5/10 (predictions)
+i Fold04: preprocessor 1/1, model 6/10
+✓ Fold04: preprocessor 1/1, model 6/10
+i Fold04: preprocessor 1/1, model 6/10 (predictions)
+i Fold04: preprocessor 1/1, model 7/10
+✓ Fold04: preprocessor 1/1, model 7/10
+i Fold04: preprocessor 1/1, model 7/10 (predictions)
+i Fold04: preprocessor 1/1, model 8/10
+✓ Fold04: preprocessor 1/1, model 8/10
+i Fold04: preprocessor 1/1, model 8/10 (predictions)
+i Fold04: preprocessor 1/1, model 9/10
+✓ Fold04: preprocessor 1/1, model 9/10
+i Fold04: preprocessor 1/1, model 9/10 (predictions)
+i Fold04: preprocessor 1/1, model 10/10
+✓ Fold04: preprocessor 1/1, model 10/10
+i Fold04: preprocessor 1/1, model 10/10 (predictions)
+i Fold05: preprocessor 1/1
+✓ Fold05: preprocessor 1/1
+i Fold05: preprocessor 1/1, model 1/10
+✓ Fold05: preprocessor 1/1, model 1/10
+i Fold05: preprocessor 1/1, model 1/10 (predictions)
+! Fold05: preprocessor 1/1, model 1/10 (predictions): There are new levels in a fa...
+i Fold05: preprocessor 1/1, model 2/10
+✓ Fold05: preprocessor 1/1, model 2/10
+i Fold05: preprocessor 1/1, model 2/10 (predictions)
+! Fold05: preprocessor 1/1, model 2/10 (predictions): There are new levels in a fa...
+i Fold05: preprocessor 1/1, model 3/10
+✓ Fold05: preprocessor 1/1, model 3/10
+i Fold05: preprocessor 1/1, model 3/10 (predictions)
+! Fold05: preprocessor 1/1, model 3/10 (predictions): There are new levels in a fa...
+i Fold05: preprocessor 1/1, model 4/10
+✓ Fold05: preprocessor 1/1, model 4/10
+i Fold05: preprocessor 1/1, model 4/10 (predictions)
+! Fold05: preprocessor 1/1, model 4/10 (predictions): There are new levels in a fa...
+i Fold05: preprocessor 1/1, model 5/10
+✓ Fold05: preprocessor 1/1, model 5/10
+i Fold05: preprocessor 1/1, model 5/10 (predictions)
+! Fold05: preprocessor 1/1, model 5/10 (predictions): There are new levels in a fa...
+i Fold05: preprocessor 1/1, model 6/10
+✓ Fold05: preprocessor 1/1, model 6/10
+i Fold05: preprocessor 1/1, model 6/10 (predictions)
+! Fold05: preprocessor 1/1, model 6/10 (predictions): There are new levels in a fa...
+i Fold05: preprocessor 1/1, model 7/10
+✓ Fold05: preprocessor 1/1, model 7/10
+i Fold05: preprocessor 1/1, model 7/10 (predictions)
+! Fold05: preprocessor 1/1, model 7/10 (predictions): There are new levels in a fa...
+i Fold05: preprocessor 1/1, model 8/10
+✓ Fold05: preprocessor 1/1, model 8/10
+i Fold05: preprocessor 1/1, model 8/10 (predictions)
+! Fold05: preprocessor 1/1, model 8/10 (predictions): There are new levels in a fa...
+i Fold05: preprocessor 1/1, model 9/10
+✓ Fold05: preprocessor 1/1, model 9/10
+i Fold05: preprocessor 1/1, model 9/10 (predictions)
+! Fold05: preprocessor 1/1, model 9/10 (predictions): There are new levels in a fa...
+i Fold05: preprocessor 1/1, model 10/10
+✓ Fold05: preprocessor 1/1, model 10/10
+i Fold05: preprocessor 1/1, model 10/10 (predictions)
+! Fold05: preprocessor 1/1, model 10/10 (predictions): There are new levels in a f...
+i Fold06: preprocessor 1/1
+✓ Fold06: preprocessor 1/1
+i Fold06: preprocessor 1/1, model 1/10
+✓ Fold06: preprocessor 1/1, model 1/10
+i Fold06: preprocessor 1/1, model 1/10 (predictions)
+! Fold06: preprocessor 1/1, model 1/10 (predictions): There are new levels in a fa...
+i Fold06: preprocessor 1/1, model 2/10
+✓ Fold06: preprocessor 1/1, model 2/10
+i Fold06: preprocessor 1/1, model 2/10 (predictions)
+! Fold06: preprocessor 1/1, model 2/10 (predictions): There are new levels in a fa...
+i Fold06: preprocessor 1/1, model 3/10
+✓ Fold06: preprocessor 1/1, model 3/10
+i Fold06: preprocessor 1/1, model 3/10 (predictions)
+! Fold06: preprocessor 1/1, model 3/10 (predictions): There are new levels in a fa...
+i Fold06: preprocessor 1/1, model 4/10
+✓ Fold06: preprocessor 1/1, model 4/10
+i Fold06: preprocessor 1/1, model 4/10 (predictions)
+! Fold06: preprocessor 1/1, model 4/10 (predictions): There are new levels in a fa...
+i Fold06: preprocessor 1/1, model 5/10
+✓ Fold06: preprocessor 1/1, model 5/10
+i Fold06: preprocessor 1/1, model 5/10 (predictions)
+! Fold06: preprocessor 1/1, model 5/10 (predictions): There are new levels in a fa...
+i Fold06: preprocessor 1/1, model 6/10
+✓ Fold06: preprocessor 1/1, model 6/10
+i Fold06: preprocessor 1/1, model 6/10 (predictions)
+! Fold06: preprocessor 1/1, model 6/10 (predictions): There are new levels in a fa...
+i Fold06: preprocessor 1/1, model 7/10
+✓ Fold06: preprocessor 1/1, model 7/10
+i Fold06: preprocessor 1/1, model 7/10 (predictions)
+! Fold06: preprocessor 1/1, model 7/10 (predictions): There are new levels in a fa...
+i Fold06: preprocessor 1/1, model 8/10
+✓ Fold06: preprocessor 1/1, model 8/10
+i Fold06: preprocessor 1/1, model 8/10 (predictions)
+! Fold06: preprocessor 1/1, model 8/10 (predictions): There are new levels in a fa...
+i Fold06: preprocessor 1/1, model 9/10
+✓ Fold06: preprocessor 1/1, model 9/10
+i Fold06: preprocessor 1/1, model 9/10 (predictions)
+! Fold06: preprocessor 1/1, model 9/10 (predictions): There are new levels in a fa...
+i Fold06: preprocessor 1/1, model 10/10
+✓ Fold06: preprocessor 1/1, model 10/10
+i Fold06: preprocessor 1/1, model 10/10 (predictions)
+! Fold06: preprocessor 1/1, model 10/10 (predictions): There are new levels in a f...
+i Fold07: preprocessor 1/1
+✓ Fold07: preprocessor 1/1
+i Fold07: preprocessor 1/1, model 1/10
+✓ Fold07: preprocessor 1/1, model 1/10
+i Fold07: preprocessor 1/1, model 1/10 (predictions)
+! Fold07: preprocessor 1/1, model 1/10 (predictions): There are new levels in a fa...
+i Fold07: preprocessor 1/1, model 2/10
+✓ Fold07: preprocessor 1/1, model 2/10
+i Fold07: preprocessor 1/1, model 2/10 (predictions)
+! Fold07: preprocessor 1/1, model 2/10 (predictions): There are new levels in a fa...
+i Fold07: preprocessor 1/1, model 3/10
+✓ Fold07: preprocessor 1/1, model 3/10
+i Fold07: preprocessor 1/1, model 3/10 (predictions)
+! Fold07: preprocessor 1/1, model 3/10 (predictions): There are new levels in a fa...
+i Fold07: preprocessor 1/1, model 4/10
+✓ Fold07: preprocessor 1/1, model 4/10
+i Fold07: preprocessor 1/1, model 4/10 (predictions)
+! Fold07: preprocessor 1/1, model 4/10 (predictions): There are new levels in a fa...
+i Fold07: preprocessor 1/1, model 5/10
+✓ Fold07: preprocessor 1/1, model 5/10
+i Fold07: preprocessor 1/1, model 5/10 (predictions)
+! Fold07: preprocessor 1/1, model 5/10 (predictions): There are new levels in a fa...
+i Fold07: preprocessor 1/1, model 6/10
+✓ Fold07: preprocessor 1/1, model 6/10
+i Fold07: preprocessor 1/1, model 6/10 (predictions)
+! Fold07: preprocessor 1/1, model 6/10 (predictions): There are new levels in a fa...
+i Fold07: preprocessor 1/1, model 7/10
+✓ Fold07: preprocessor 1/1, model 7/10
+i Fold07: preprocessor 1/1, model 7/10 (predictions)
+! Fold07: preprocessor 1/1, model 7/10 (predictions): There are new levels in a fa...
+i Fold07: preprocessor 1/1, model 8/10
+✓ Fold07: preprocessor 1/1, model 8/10
+i Fold07: preprocessor 1/1, model 8/10 (predictions)
+! Fold07: preprocessor 1/1, model 8/10 (predictions): There are new levels in a fa...
+i Fold07: preprocessor 1/1, model 9/10
+✓ Fold07: preprocessor 1/1, model 9/10
+i Fold07: preprocessor 1/1, model 9/10 (predictions)
+! Fold07: preprocessor 1/1, model 9/10 (predictions): There are new levels in a fa...
+i Fold07: preprocessor 1/1, model 10/10
+✓ Fold07: preprocessor 1/1, model 10/10
+i Fold07: preprocessor 1/1, model 10/10 (predictions)
+! Fold07: preprocessor 1/1, model 10/10 (predictions): There are new levels in a f...
+i Fold08: preprocessor 1/1
+✓ Fold08: preprocessor 1/1
+i Fold08: preprocessor 1/1, model 1/10
+✓ Fold08: preprocessor 1/1, model 1/10
+i Fold08: preprocessor 1/1, model 1/10 (predictions)
+! Fold08: preprocessor 1/1, model 1/10 (predictions): There are new levels in a fa...
+i Fold08: preprocessor 1/1, model 2/10
+✓ Fold08: preprocessor 1/1, model 2/10
+i Fold08: preprocessor 1/1, model 2/10 (predictions)
+! Fold08: preprocessor 1/1, model 2/10 (predictions): There are new levels in a fa...
+i Fold08: preprocessor 1/1, model 3/10
+✓ Fold08: preprocessor 1/1, model 3/10
+i Fold08: preprocessor 1/1, model 3/10 (predictions)
+! Fold08: preprocessor 1/1, model 3/10 (predictions): There are new levels in a fa...
+i Fold08: preprocessor 1/1, model 4/10
+✓ Fold08: preprocessor 1/1, model 4/10
+i Fold08: preprocessor 1/1, model 4/10 (predictions)
+! Fold08: preprocessor 1/1, model 4/10 (predictions): There are new levels in a fa...
+i Fold08: preprocessor 1/1, model 5/10
+✓ Fold08: preprocessor 1/1, model 5/10
+i Fold08: preprocessor 1/1, model 5/10 (predictions)
+! Fold08: preprocessor 1/1, model 5/10 (predictions): There are new levels in a fa...
+i Fold08: preprocessor 1/1, model 6/10
+✓ Fold08: preprocessor 1/1, model 6/10
+i Fold08: preprocessor 1/1, model 6/10 (predictions)
+! Fold08: preprocessor 1/1, model 6/10 (predictions): There are new levels in a fa...
+i Fold08: preprocessor 1/1, model 7/10
+✓ Fold08: preprocessor 1/1, model 7/10
+i Fold08: preprocessor 1/1, model 7/10 (predictions)
+! Fold08: preprocessor 1/1, model 7/10 (predictions): There are new levels in a fa...
+i Fold08: preprocessor 1/1, model 8/10
+✓ Fold08: preprocessor 1/1, model 8/10
+i Fold08: preprocessor 1/1, model 8/10 (predictions)
+! Fold08: preprocessor 1/1, model 8/10 (predictions): There are new levels in a fa...
+i Fold08: preprocessor 1/1, model 9/10
+✓ Fold08: preprocessor 1/1, model 9/10
+i Fold08: preprocessor 1/1, model 9/10 (predictions)
+! Fold08: preprocessor 1/1, model 9/10 (predictions): There are new levels in a fa...
+i Fold08: preprocessor 1/1, model 10/10
+✓ Fold08: preprocessor 1/1, model 10/10
+i Fold08: preprocessor 1/1, model 10/10 (predictions)
+! Fold08: preprocessor 1/1, model 10/10 (predictions): There are new levels in a f...
+i Fold09: preprocessor 1/1
+✓ Fold09: preprocessor 1/1
+i Fold09: preprocessor 1/1, model 1/10
+✓ Fold09: preprocessor 1/1, model 1/10
+i Fold09: preprocessor 1/1, model 1/10 (predictions)
+! Fold09: preprocessor 1/1, model 1/10 (predictions): There are new levels in a fa...
+i Fold09: preprocessor 1/1, model 2/10
+✓ Fold09: preprocessor 1/1, model 2/10
+i Fold09: preprocessor 1/1, model 2/10 (predictions)
+! Fold09: preprocessor 1/1, model 2/10 (predictions): There are new levels in a fa...
+i Fold09: preprocessor 1/1, model 3/10
+✓ Fold09: preprocessor 1/1, model 3/10
+i Fold09: preprocessor 1/1, model 3/10 (predictions)
+! Fold09: preprocessor 1/1, model 3/10 (predictions): There are new levels in a fa...
+i Fold09: preprocessor 1/1, model 4/10
+✓ Fold09: preprocessor 1/1, model 4/10
+i Fold09: preprocessor 1/1, model 4/10 (predictions)
+! Fold09: preprocessor 1/1, model 4/10 (predictions): There are new levels in a fa...
+i Fold09: preprocessor 1/1, model 5/10
+✓ Fold09: preprocessor 1/1, model 5/10
+i Fold09: preprocessor 1/1, model 5/10 (predictions)
+! Fold09: preprocessor 1/1, model 5/10 (predictions): There are new levels in a fa...
+i Fold09: preprocessor 1/1, model 6/10
+✓ Fold09: preprocessor 1/1, model 6/10
+i Fold09: preprocessor 1/1, model 6/10 (predictions)
+! Fold09: preprocessor 1/1, model 6/10 (predictions): There are new levels in a fa...
+i Fold09: preprocessor 1/1, model 7/10
+✓ Fold09: preprocessor 1/1, model 7/10
+i Fold09: preprocessor 1/1, model 7/10 (predictions)
+! Fold09: preprocessor 1/1, model 7/10 (predictions): There are new levels in a fa...
+i Fold09: preprocessor 1/1, model 8/10
+✓ Fold09: preprocessor 1/1, model 8/10
+i Fold09: preprocessor 1/1, model 8/10 (predictions)
+! Fold09: preprocessor 1/1, model 8/10 (predictions): There are new levels in a fa...
+i Fold09: preprocessor 1/1, model 9/10
+✓ Fold09: preprocessor 1/1, model 9/10
+i Fold09: preprocessor 1/1, model 9/10 (predictions)
+! Fold09: preprocessor 1/1, model 9/10 (predictions): There are new levels in a fa...
+i Fold09: preprocessor 1/1, model 10/10
+✓ Fold09: preprocessor 1/1, model 10/10
+i Fold09: preprocessor 1/1, model 10/10 (predictions)
+! Fold09: preprocessor 1/1, model 10/10 (predictions): There are new levels in a f...
+i Fold10: preprocessor 1/1
+✓ Fold10: preprocessor 1/1
+i Fold10: preprocessor 1/1, model 1/10
+✓ Fold10: preprocessor 1/1, model 1/10
+i Fold10: preprocessor 1/1, model 1/10 (predictions)
+! Fold10: preprocessor 1/1, model 1/10 (predictions): There are new levels in a fa...
+i Fold10: preprocessor 1/1, model 2/10
+✓ Fold10: preprocessor 1/1, model 2/10
+i Fold10: preprocessor 1/1, model 2/10 (predictions)
+! Fold10: preprocessor 1/1, model 2/10 (predictions): There are new levels in a fa...
+i Fold10: preprocessor 1/1, model 3/10
+✓ Fold10: preprocessor 1/1, model 3/10
+i Fold10: preprocessor 1/1, model 3/10 (predictions)
+! Fold10: preprocessor 1/1, model 3/10 (predictions): There are new levels in a fa...
+i Fold10: preprocessor 1/1, model 4/10
+✓ Fold10: preprocessor 1/1, model 4/10
+i Fold10: preprocessor 1/1, model 4/10 (predictions)
+! Fold10: preprocessor 1/1, model 4/10 (predictions): There are new levels in a fa...
+i Fold10: preprocessor 1/1, model 5/10
+✓ Fold10: preprocessor 1/1, model 5/10
+i Fold10: preprocessor 1/1, model 5/10 (predictions)
+! Fold10: preprocessor 1/1, model 5/10 (predictions): There are new levels in a fa...
+i Fold10: preprocessor 1/1, model 6/10
+✓ Fold10: preprocessor 1/1, model 6/10
+i Fold10: preprocessor 1/1, model 6/10 (predictions)
+! Fold10: preprocessor 1/1, model 6/10 (predictions): There are new levels in a fa...
+i Fold10: preprocessor 1/1, model 7/10
+✓ Fold10: preprocessor 1/1, model 7/10
+i Fold10: preprocessor 1/1, model 7/10 (predictions)
+! Fold10: preprocessor 1/1, model 7/10 (predictions): There are new levels in a fa...
+i Fold10: preprocessor 1/1, model 8/10
+✓ Fold10: preprocessor 1/1, model 8/10
+i Fold10: preprocessor 1/1, model 8/10 (predictions)
+! Fold10: preprocessor 1/1, model 8/10 (predictions): There are new levels in a fa...
+i Fold10: preprocessor 1/1, model 9/10
+✓ Fold10: preprocessor 1/1, model 9/10
+i Fold10: preprocessor 1/1, model 9/10 (predictions)
+! Fold10: preprocessor 1/1, model 9/10 (predictions): There are new levels in a fa...
+i Fold10: preprocessor 1/1, model 10/10
+✓ Fold10: preprocessor 1/1, model 10/10
+i Fold10: preprocessor 1/1, model 10/10 (predictions)
+! Fold10: preprocessor 1/1, model 10/10 (predictions): There are new levels in a f...
+> 
+> tictoc::toc()
+13919.058 sec elapsed
+> plan(sequential)
+> 
+> #######################
+> 
+> train_best <- select_best(tune_random_trees, metric = "rmse")
+> 
+> train_wf_final <- finalize_workflow(
++   forest_flo,
++   train_best
++ )
+> 
+> tictoc::tic()
+> set.seed(3000)
+> train_res_final <- last_fit(train_wf_final,
++                             split = d_split)
+! train/test split: preprocessor 1/1, model 1/1 (predictions): There are new levels in a fac...
+> tictoc::toc()
+204.968 sec elapsed
+> 
+> train_res_final %>% 
++   collect_metrics()
+# A tibble: 2 x 4
+  .metric .estimator .estimate .config             
+  <chr>   <chr>          <dbl> <fct>               
+1 rmse    standard      85.8   Preprocessor1_Model1
+2 rsq     standard       0.453 Preprocessor1_Model1
+> 
+> ###########################
+> test <- read_csv("data/test.csv",
++                  col_types = cols(.default = col_guess(), 
++                                   calc_admn_cd = col_character()))
+> 
+> #joins - edited
+> test1 <- test %>% 
++   left_join(frl_stu) %>% 
++   left_join(staff) %>% 
++   left_join(ethnicities)
+Joining, by = "ncessch"
+Joining, by = "ncessch"
+Joining, by = c("attnd_dist_inst_id", "attnd_schl_inst_id")
+> 
+> #workflow
+> fit_workflow <- fit(train_wf_final, d)
+Growing trees.. Progress: 55%. Estimated remaining time: 25 seconds.
+Computing permutation importance.. Progress: 36%. Estimated remaining time: 54 seconds.
+Computing permutation importance.. Progress: 73%. Estimated remaining time: 23 seconds.
+> 
+> #use model to make predictions for test dataset
+> preds_final <- predict(fit_workflow, test1)
+Warning message:
+There are new levels in a factor: NA 
+> 
+> ######################
+> pred_frame <- tibble(Id = test1$id, Predicted = preds_final$.pred)
+> 
+> write_csv(pred_frame, "fit2-final-st-editrecipe.csv") #edited
+> 
+> saveRDS(train_res_final, "prelimfit2_finalfit-st-editrecipe.Rds")#added to save RDS object for final
+> 
+> 
+> 
+> 
+> 
+> proc.time()
+      user     system    elapsed 
+102634.509    366.748  14477.935 
