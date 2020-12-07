@@ -2,6 +2,7 @@ library(tidyverse)
 library(tidymodels)
 #library(doParallel)
 library(rio)
+library(glmnet)
 
 ####### copied from st-test(random forest)
 ###################data
